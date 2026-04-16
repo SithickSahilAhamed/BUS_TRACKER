@@ -1,0 +1,566 @@
+/* ════════════════════════════════════════════════════════════
+   HOME PAGE — AGNI COLLEGE OF TECHNOLOGY
+   ════════════════════════════════════════════════════════════ */
+
+.home-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f7f9fc;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+}
+
+/* ── NAV ── */
+.home-nav {
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid #e2e8f0;
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.home-nav-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.home-nav-logo {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.home-nav-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.home-nav-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.home-nav-sub {
+  font-size: 0.72rem;
+  color: #64748b;
+  letter-spacing: 0.01em;
+}
+
+.home-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-nav-btn {
+  padding: 0.45rem 1.1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+
+.home-nav-btn.ghost {
+  background: transparent;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.home-nav-btn.ghost:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.home-nav-btn.primary {
+  background: #0f5d8f;
+  color: white;
+}
+
+.home-nav-btn.primary:hover {
+  background: #0a4a73;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 93, 143, 0.3);
+}
+
+/* ── HERO ── */
+.home-hero {
+  flex: 1;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f6ff 50%, #e8f4ed 100%);
+  padding: 80px 24px 60px;
+  position: relative;
+  overflow: hidden;
+}
+
+.home-hero::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(15, 93, 143, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.home-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -40px;
+  left: 10%;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(27, 122, 90, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.home-hero-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.home-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.home-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 93, 143, 0.08);
+  color: #0f5d8f;
+  border: 1px solid rgba(15, 93, 143, 0.15);
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.home-tag::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+.home-hero-h1 {
+  font-size: clamp(2.6rem, 5vw, 3.8rem);
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  margin: 0;
+}
+
+.home-hero-accent {
+  background: linear-gradient(135deg, #0f5d8f, #1b7a5a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.home-hero-desc {
+  font-size: 1.05rem;
+  color: #475569;
+  line-height: 1.65;
+  max-width: 440px;
+  margin: 0;
+}
+
+.home-hero-btns {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.home-cta-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.85rem 1.75rem;
+  background: #0f5d8f;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(15, 93, 143, 0.35);
+}
+
+.home-cta-primary:hover {
+  background: #0a4a73;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 93, 143, 0.4);
+}
+
+.home-cta-secondary {
+  padding: 0.85rem 1.75rem;
+  background: white;
+  color: #0f5d8f;
+  border: 1.5px solid #0f5d8f;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.home-cta-secondary:hover {
+  background: #f0f6ff;
+  transform: translateY(-1px);
+}
+
+.home-stats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.home-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-stat strong {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.home-stat span {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.home-stat-divider {
+  width: 1px;
+  height: 28px;
+  background: #e2e8f0;
+}
+
+/* ── MAP CARD ── */
+.home-hero-visual {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.home-map-card {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(15, 93, 143, 0.15), 0 4px 16px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid #e2e8f0;
+}
+
+.home-map-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.home-map-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.home-map-dot.live {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.home-map-time {
+  margin-left: auto;
+  background: #f0fdf4;
+  color: #16a34a;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.home-map-body {
+  padding: 0;
+  background: #e8f0f7;
+}
+
+.home-map-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.home-map-footer {
+  padding: 10px 16px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.home-map-bus-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot.blue { background: #0f5d8f; }
+.dot.green { background: #1b7a5a; }
+.dot.gold { background: #c9973a; }
+
+/* ── ROLE CARDS ── */
+.home-roles {
+  background: white;
+  padding: 64px 24px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.home-roles-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.home-section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  margin: 0 0 32px 0;
+  text-align: center;
+}
+
+.home-role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.home-role-card {
+  padding: 28px 24px;
+  border-radius: 16px;
+  border: 1.5px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.home-role-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+}
+
+.home-role-card.student:hover { border-color: #0f5d8f; }
+.home-role-card.driver:hover  { border-color: #1b7a5a; }
+.home-role-card.admin:hover   { border-color: #c9973a; }
+
+.home-role-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-role-card.student .home-role-icon { background: rgba(15, 93, 143, 0.1); color: #0f5d8f; }
+.home-role-card.driver  .home-role-icon { background: rgba(27, 122, 90, 0.1); color: #1b7a5a; }
+.home-role-card.admin   .home-role-icon { background: rgba(201, 151, 58, 0.1); color: #c9973a; }
+
+.home-role-body {
+  flex: 1;
+}
+
+.home-role-body h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+}
+
+.home-role-body p {
+  font-size: 0.875rem;
+  color: #64748b;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.home-role-cta {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f5d8f;
+}
+
+.home-role-card.driver .home-role-cta  { color: #1b7a5a; }
+.home-role-card.admin  .home-role-cta  { color: #c9973a; }
+
+/* ── FEATURES ── */
+.home-features {
+  background: #f7f9fc;
+  padding: 48px 24px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.home-features-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.home-feature {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.home-feature-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.home-feature h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.home-feature p {
+  font-size: 0.845rem;
+  color: #64748b;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ── FOOTER ── */
+.home-footer {
+  background: #0f172a;
+  padding: 24px;
+}
+
+.home-footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.home-footer-brand {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: white;
+}
+
+.home-footer-copy {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .home-hero-inner {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    text-align: center;
+  }
+  .home-hero {
+    padding: 48px 24px 40px;
+  }
+  .home-hero-desc { max-width: 100%; }
+  .home-hero-btns { justify-content: center; }
+  .home-stats { justify-content: center; }
+  .home-tag { margin: 0 auto; }
+  .home-hero-visual { justify-content: center; }
+  .home-map-card { max-width: 360px; }
+  .home-role-grid { grid-template-columns: 1fr; }
+  .home-features-inner { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .home-nav-inner { padding: 0 16px; }
+  .home-nav-sub { display: none; }
+  .home-hero { padding: 40px 16px 32px; }
+  .home-hero-h1 { font-size: 2.2rem; }
+  .home-cta-primary, .home-cta-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+  .home-hero-btns { flex-direction: column; }
+  .home-roles { padding: 40px 16px; }
+  .home-features { padding: 32px 16px; }
+  .home-footer-inner { flex-direction: column; text-align: center; }
+}

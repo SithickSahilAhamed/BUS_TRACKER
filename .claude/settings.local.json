@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat \"c:\\\\Users\\\\sabee\\\\Desktop\\\\Bus Tracker\\\\frontend\\\\src\\\\hooks\"/*.ts)"
+    ]
+  }
+}
