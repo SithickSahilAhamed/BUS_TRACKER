@@ -5,10 +5,11 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Alert, Badge } from '../components/common';
 import { AdminSidebar } from '../components/admin/Sidebar';
 import { BusMap, isFresh } from '../components/BusMap';
+import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
 import {
   createBus,
@@ -51,6 +52,12 @@ const EMPTY_DRIVER_FORM: DriverForm = { name: '', phone: '', email: '', password
 
 export const AdminDashboardPage: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { profile, logout } = useAuth();
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
   const tab =
     location.pathname === '/admin/buses' ? 'buses'
     : location.pathname === '/admin/drivers' ? 'drivers'
@@ -406,6 +413,12 @@ export const AdminDashboardPage: React.FC = () => {
     <div className="admin-shell">
       <AdminSidebar />
       <div className="admin-main">
+        <div className="admin-topbar">
+          <span className="admin-topbar-user" title={profile?.email}>
+            {profile ? `${profile.name} · admin` : 'Admin'}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Logout</button>
+        </div>
         <div className="admin-content">
           <div className="section-header">
             <h1 className="section-title">

@@ -428,6 +428,18 @@ tbody tr:hover { background: var(--surface-2); }
 }
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr; }
+  .two-col { grid-template-columns: 1fr; }
+  .status-grid { grid-template-columns: repeat(2, 1fr); }
+  .campus-section { padding: 16px; }
+  .login-card { padding: 1.75rem 1.5rem; }
+  .modal-card { padding: 1.25rem; }
+  .campus-nav, .navbar { height: auto; padding: 10px 12px; }
+  .campus-nav-inner { flex-wrap: wrap; row-gap: 8px; }
+  .campus-nav-right { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .campus-nav-title { font-size: 1rem; }
+  .chip { padding: .3rem .6rem; font-size: .75rem; }
+  .admin-topbar { padding: .6rem 14px; }
+  .admin-topbar-user { max-width: 140px; }
 }
 
 /* ─── Campus Layout System ───────────────────────── */
@@ -669,6 +681,28 @@ tbody tr:hover { background: var(--surface-2); }
 .admin-main { flex: 1; margin-left: 240px; display: flex; flex-direction: column; }
 .admin-content { padding: 24px; max-width: 1200px; margin: 0 auto; width: 100%; }
 
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: .75rem 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.admin-topbar-user {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -704,6 +738,14 @@ tbody tr:hover { background: var(--surface-2); }
 .admin-sidebar.compact { width: 84px; }
 
 .admin-sidebar.compact .sidebar-link span {
+  display: none;
+}
+
+.admin-sidebar.compact .sidebar-logout {
+  justify-content: center;
+}
+
+.admin-sidebar.compact .sidebar-logout span {
   display: none;
 }
 
@@ -750,6 +792,23 @@ tbody tr:hover { background: var(--surface-2); }
 
 .sidebar-footer { margin-top: auto; }
 
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  width: 100%;
+  padding: .7rem .9rem;
+  border-radius: 12px;
+  background: rgba(194, 61, 61, 0.16);
+  color: #ff8a80;
+  border: none;
+  cursor: pointer;
+  font: 600 .92rem var(--font-body, inherit);
+  transition: background .15s;
+}
+
+.sidebar-logout:hover { background: rgba(194, 61, 61, 0.3); }
+
 /* ─── Responsive Overrides ───────────────────────── */
 @media (max-width: 1024px) {
   .admin-main { margin-left: 84px; }
@@ -757,6 +816,8 @@ tbody tr:hover { background: var(--surface-2); }
   .admin-sidebar.compact { width: 84px; }
   .sidebar-brand { display: none; }
   .sidebar-link span { display: none; }
+  .sidebar-logout { justify-content: center; padding: .7rem; }
+  .sidebar-logout span { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -764,7 +825,8 @@ tbody tr:hover { background: var(--surface-2); }
   .map-panel-right { position: static; width: auto; margin: 12px; }
   .map-panel-left { position: static; width: auto; margin: 12px; }
   .admin-main { margin-left: 0; }
-  .admin-sidebar { position: static; width: 100%; flex-direction: row; padding: 12px; }
+  .admin-sidebar { position: static; width: 100%; flex-direction: row; align-items: center; padding: 12px; }
   .sidebar-toggle { display: none; }
   .sidebar-links { display: flex; flex-wrap: wrap; }
+  .sidebar-footer { margin-top: 0; margin-left: auto; }
 }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { InstallAppButton } from '../components/InstallAppButton';
 import './Home.css';
 
 export const HomePage: React.FC = () => {
@@ -27,6 +28,7 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
           <div className="home-nav-actions">
+            <InstallAppButton className="home-nav-btn ghost" />
             <button className="home-nav-btn ghost" onClick={() => navigate('/login')}>Sign In</button>
             <button className="home-nav-btn primary" onClick={() => navigate('/map')}>Track Now</button>
           </div>
