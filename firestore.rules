@@ -24,14 +24,16 @@ service cloud.firestore {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
 
       allow create: if
-        // Self-signup: role limited to student/professor, fixed key set —
-        // nobody can grant themselves admin or driver.
+        // Self-signup: role limited to student/professor, fixed key set,
+        // college email only — nobody can grant themselves admin or driver.
         (request.auth.uid == uid
           && request.resource.data.role in ['student', 'professor']
           && request.resource.data.active == true
+          && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$')
           && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'active', 'createdAt']))
         // Admin creating a driver profile (uid comes from secondary-app signup)
-        || (isAdmin() && request.resource.data.role == 'driver');
+        || (isAdmin() && request.resource.data.role == 'driver'
+          && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$'));
 
       allow update: if
         (request.auth.uid == uid

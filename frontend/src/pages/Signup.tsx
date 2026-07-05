@@ -5,6 +5,11 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 
+const COLLEGE_EMAIL_DOMAIN = '@act.edu.in';
+
+const isCollegeEmail = (email: string): boolean =>
+  email.trim().toLowerCase().endsWith(COLLEGE_EMAIL_DOMAIN);
+
 const friendlyError = (code: string): string => {
   switch (code) {
     case 'auth/email-already-in-use':
@@ -38,6 +43,10 @@ const SignupPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!isCollegeEmail(email)) {
+      setError(`Use your college email address (ending in ${COLLEGE_EMAIL_DOMAIN}).`);
+      return;
+    }
     setSubmitting(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
@@ -78,15 +87,18 @@ const SignupPage: React.FC = () => {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Email</label>
+            <label className="form-label">College email</label>
             <input
               type="email"
               className="form-control"
-              placeholder="you@example.com"
+              placeholder="23it104@act.edu.in"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+            <p style={{ fontSize: '.8rem', color: 'rgba(255,255,255,.5)', marginTop: '.35rem' }}>
+              Must be your {COLLEGE_EMAIL_DOMAIN} address.
+            </p>
           </div>
           <div className="form-group">
             <label className="form-label">Password (min 6 characters)</label>
