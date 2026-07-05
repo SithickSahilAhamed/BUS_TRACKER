@@ -27,8 +27,8 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
           <div className="home-nav-actions">
-            <button className="home-nav-btn ghost" onClick={() => navigate('/admin/login')}>Admin</button>
-            <button className="home-nav-btn primary" onClick={() => navigate('/student')}>Track Now</button>
+            <button className="home-nav-btn ghost" onClick={() => navigate('/login')}>Sign In</button>
+            <button className="home-nav-btn primary" onClick={() => navigate('/map')}>Track Now</button>
           </div>
         </div>
       </nav>
@@ -48,7 +48,7 @@ export const HomePage: React.FC = () => {
               See live positions, ETAs, and routes — on any device.
             </p>
             <div className="home-hero-btns">
-              <button className="home-cta-primary" onClick={() => navigate('/student')}>
+              <button className="home-cta-primary" onClick={() => navigate('/map')}>
                 <svg viewBox="0 0 20 20" fill="none" width="18" height="18">
                   <path d="M10 2C6.686 2 4 4.686 4 8c0 4.5 6 10 6 10s6-5.5 6-10c0-3.314-2.686-6-6-6z" fill="white" opacity=".9"/>
                   <circle cx="10" cy="8" r="2" fill="white"/>
@@ -138,7 +138,7 @@ export const HomePage: React.FC = () => {
         <div className="home-roles-inner">
           <h2 className="home-section-title">Choose your access</h2>
           <div className="home-role-grid">
-            <div className="home-role-card student" onClick={() => navigate('/student')}>
+            <div className="home-role-card student" onClick={() => navigate('/signup')}>
               <div className="home-role-icon">
                 <svg viewBox="0 0 24 24" fill="none" width="26" height="26">
                   <path d="M12 2C8.686 2 6 4.686 6 8c0 4.5 6 12 6 12s6-7.5 6-12c0-3.314-2.686-6-6-6z" fill="currentColor"/>
@@ -146,10 +146,10 @@ export const HomePage: React.FC = () => {
                 </svg>
               </div>
               <div className="home-role-body">
-                <h3>Student</h3>
-                <p>Track your bus on a live map. See real-time position, route, and ETA.</p>
+                <h3>Student / Professor</h3>
+                <p>Create an account and track every bus on a live map — position, route, and driver.</p>
               </div>
-              <div className="home-role-cta">Open Map →</div>
+              <div className="home-role-cta">Sign Up →</div>
             </div>
 
             <div className="home-role-card driver" onClick={() => navigate('/driver/login')}>
@@ -195,7 +195,7 @@ export const HomePage: React.FC = () => {
             </div>
             <div>
               <h4>Secure & Private</h4>
-              <p>Driver sessions are PIN-protected. Student data is never stored.</p>
+              <p>Every role signs in with their own account. Only your driver can share a bus's location.</p>
             </div>
           </div>
           <div className="home-feature">
@@ -207,7 +207,7 @@ export const HomePage: React.FC = () => {
             </div>
             <div>
               <h4>Live Updates</h4>
-              <p>Bus positions refresh every 5 seconds via WebSocket — no page reload needed.</p>
+              <p>Bus positions refresh every few seconds in real time — no page reload needed.</p>
             </div>
           </div>
           <div className="home-feature">

@@ -1,37 +1,29 @@
-// Firebase Client SDK Configuration
+// Firebase Client SDK — project: bustracking-fe9fe
+// Values come from frontend/.env (Firebase console → Project settings → Your apps → Web app)
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getMessaging, isSupported } from 'firebase/messaging';
-import { getAnalytics } from 'firebase/analytics';
+import { getFirestore } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyCT20gNsOZOaROBnHJuiuujXz5tHHxL6Nw',
-  authDomain: 'collegebustracker-1c6d9.firebaseapp.com',
-  projectId: 'collegebustracker-1c6d9',
-  storageBucket: 'collegebustracker-1c6d9.firebasestorage.app',
-  messagingSenderId: '805302719283',
-  appId: '1:805302719283:web:740e764134aaddd9de6446',
-  measurementId: 'G-E5GSNCHTHR',
+export const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
+
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  // Surface a clear message instead of a cryptic Firebase error
+  console.error(
+    'Firebase config missing. Copy frontend/.env.example to frontend/.env and fill the VITE_FIREBASE_* values from the Firebase console.'
+  );
+}
 
 // Prevent double init in hot-module reload
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
-
-// FCM — only init in supported browsers (needs HTTPS + service worker)
-export const messagingPromise = isSupported().then((yes) =>
-  yes ? getMessaging(app) : null
-);
-
-// Analytics (optional)
-if (typeof window !== 'undefined') {
-  getAnalytics(app);
-}
-
-// VAPID Key for Web Push
-// Get from Firebase Console → Cloud Messaging → Web Push certificates → Generate
-// Then replace the value below
-export const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || '';
+export const db = getFirestore(app);
 
 export default app;

@@ -600,6 +600,70 @@ tbody tr:hover { background: var(--surface-2); }
 
 .map-meta-row strong { color: var(--text); }
 
+/* ─── Modal ──────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 29, 46, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* ─── Leaflet bus markers ────────────────────────── */
+/* Glide markers between GPS updates (but not during zoom animations) */
+.leaflet-container:not(.leaflet-zoom-anim) .bus-div-icon {
+  transition: transform 1s linear;
+}
+.bus-div-icon { background: none; border: none; }
+.bus-stop-icon { background: none; border: none; }
+
+.bus-list {
+  display: grid;
+  gap: .5rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.bus-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .6rem .8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  font-size: .88rem;
+}
+.bus-list-item:hover { background: var(--surface-2); }
+.bus-list-item.selected { border-color: var(--primary); background: rgba(15, 93, 143, 0.06); }
+
+.status-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+.status-dot.live { background: var(--success); box-shadow: 0 0 0 3px rgba(27, 122, 90, .2); }
+.status-dot.stale { background: var(--warning); }
+.status-dot.offline { background: #8a94a0; }
+
 /* ─── Admin Layout ───────────────────────────────── */
 .admin-shell { display: flex; min-height: 100vh; }
 .admin-main { flex: 1; margin-left: 240px; display: flex; flex-direction: column; }

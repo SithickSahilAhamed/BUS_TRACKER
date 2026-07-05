@@ -1,523 +1,577 @@
 /**
  * ADMIN DASHBOARD
- * Fleet management: buses (with route config), drivers, live stats
- * Route config uses origin/destination/waypoints for Google Maps Directions API
+ * Fleet management on Firestore: buses (with geocoded OSM route), driver
+ * accounts, and a live tracking map. Tab shown depends on the /admin/* path.
  */
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Navbar, Button, Alert, Badge } from '../components/common';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Button, Alert, Badge } from '../components/common';
 import { AdminSidebar } from '../components/admin/Sidebar';
-import { useSocketListener } from '../hooks';
-import SocketService from '../services/socket';
-import ApiService from '../services/api';
-import { Bus, Driver } from '../types';
+import { BusMap, isFresh } from '../components/BusMap';
+import { useBuses } from '../hooks/useBuses';
+import {
+  createBus,
+  updateBus,
+  deleteBus,
+  releaseBus,
+  subscribeToDrivers,
+  setDriverActive,
+  createDriverAccount,
+  normalizeBusId,
+} from '../services/firestore';
+import { buildRoute } from '../services/geo';
+import type { Bus, UserProfile } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function apiPost(path: string, body: object, token?: string) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Forms ────────────────────────────────────────────────────────────────────
 
 interface BusForm {
-  busId: string;
+  busNumber: string;
   busName: string;
-  driverName: string;
   routeName: string;
   origin: string;
   destination: string;
-  waypoints: string; // comma-separated string in UI
+  waypoints: string; // comma-separated in the UI
 }
 
 const EMPTY_BUS_FORM: BusForm = {
-  busId: '', busName: '', driverName: '',
-  routeName: '', origin: '', destination: '', waypoints: '',
+  busNumber: '', busName: '', routeName: '', origin: '', destination: '', waypoints: '',
 };
+
+interface DriverForm {
+  name: string;
+  phone: string;
+  email: string;
+  password: string;
+}
+
+const EMPTY_DRIVER_FORM: DriverForm = { name: '', phone: '', email: '', password: '' };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AdminDashboardPage: React.FC = () => {
-  const navigate = useNavigate();
-  const token = localStorage.getItem('authToken') || '';
+  const location = useLocation();
+  const tab =
+    location.pathname === '/admin/buses' ? 'buses'
+    : location.pathname === '/admin/drivers' ? 'drivers'
+    : location.pathname === '/admin/tracking' ? 'tracking'
+    : 'overview';
 
-  const [buses, setBuses] = useState<Bus[]>([]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [activeBuses, setActiveBuses] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const { buses, loading: busesLoading } = useBuses();
+  const [drivers, setDrivers] = useState<UserProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Modal state
+  // Bus modal
   const [showBusModal, setShowBusModal] = useState(false);
-  const [editingBus, setEditingBus] = useState<Bus | null>(null);
+  const [editingBusId, setEditingBusId] = useState<string | null>(null);
   const [busForm, setBusForm] = useState<BusForm>(EMPTY_BUS_FORM);
+  const [busSaving, setBusSaving] = useState(false);
+  const [busSaveStatus, setBusSaveStatus] = useState('');
 
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [pinBusId, setPinBusId] = useState('');
-  const [newPin, setNewPin] = useState('');
+  // Driver modal
+  const [showDriverModal, setShowDriverModal] = useState(false);
+  const [driverForm, setDriverForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
+  const [driverSaving, setDriverSaving] = useState(false);
 
-  // Simulation state
-  const [simBusId, setSimBusId] = useState('');
-  const [simRunning, setSimRunning] = useState<string | null>(null); // busId currently simulating
-
-  // ─── Load data ────────────────────────────────────────────────────────────
+  // Tracking tab selection
+  const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [busRes, driverRes] = await Promise.all([
-          ApiService.getBuses(),
-          ApiService.getDrivers(),
-        ]);
-        const busList = Array.isArray(busRes.data) ? busRes.data : [];
-        const driverList = Array.isArray(driverRes.data) ? driverRes.data : [];
-        setBuses(busList);
-        setDrivers(driverList);
-        setActiveBuses(busList.filter((b: any) => b.isActive).length);
-      } catch {
-        setError('Failed to load dashboard data. Is the server running?');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
+    const unsub = subscribeToDrivers(setDrivers, () =>
+      setError('Could not load drivers. Are you signed in as admin?')
+    );
+    return unsub;
   }, []);
 
-  // ─── Socket ───────────────────────────────────────────────────────────────
-
+  // Auto-dismiss toasts
   useEffect(() => {
-    SocketService.connect(token)
-      .then(() => SocketService.joinAdminRoom())
-      .catch(() => {});
-    return () => { SocketService.leaveAdminRoom(); SocketService.disconnect(); };
-  }, [token]);
+    if (!success && !error) return;
+    const t = setTimeout(() => { setSuccess(null); setError(null); }, 5000);
+    return () => clearTimeout(t);
+  }, [success, error]);
 
-  useSocketListener('location-update', (data: any) => {
-    setBuses((prev) =>
-      prev.map((b: any) =>
-        (b.busId || b.id) === data.busId
-          ? { ...b, isActive: true, lastLocation: { latitude: data.latitude, longitude: data.longitude, timestamp: data.timestamp } }
-          : b
-      )
-    );
-  });
+  const onTripCount = useMemo(() => buses.filter((b) => b.isActive).length, [buses]);
+  const liveCount = useMemo(() => buses.filter((b) => b.isActive && isFresh(b)).length, [buses]);
 
-  useSocketListener('bus-status-change', (data: any) => {
-    if (data.status === 'online') setActiveBuses((n) => n + 1);
-    if (data.status === 'offline') setActiveBuses((n) => Math.max(0, n - 1));
-  });
+  // ─── Bus handlers ───────────────────────────────────────────────────────────
 
-  // ─── Bus CRUD ─────────────────────────────────────────────────────────────
-
-  const openAddModal = () => {
-    setEditingBus(null);
+  const openCreateBus = () => {
+    setEditingBusId(null);
     setBusForm(EMPTY_BUS_FORM);
     setShowBusModal(true);
   };
 
-  const openEditModal = (bus: any) => {
-    setEditingBus(bus);
+  const openEditBus = (bus: Bus) => {
+    setEditingBusId(bus.busId);
     setBusForm({
-      busId: bus.busId || bus.id || '',
-      busName: bus.busName || bus.busNumber || '',
-      driverName: bus.driverName || '',
-      routeName: bus.routeName || '',
-      origin: bus.origin || '',
-      destination: bus.destination || '',
-      waypoints: Array.isArray(bus.waypoints) ? bus.waypoints.join(', ') : (bus.waypoints || ''),
+      busNumber: bus.busNumber,
+      busName: bus.busName,
+      routeName: bus.routeName,
+      origin: bus.origin,
+      destination: bus.destination,
+      waypoints: bus.waypoints.join(', '),
     });
     setShowBusModal(true);
   };
 
-  const handleSaveBus = async () => {
-    if (!busForm.busId.trim()) { setError('Bus ID is required.'); return; }
+  const handleSaveBus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusSaving(true);
+    setError(null);
 
-    const payload = {
-      busId: busForm.busId.trim(),
-      busName: busForm.busName.trim() || busForm.busId.trim(),
-      driverName: busForm.driverName.trim(),
-      routeName: busForm.routeName.trim(),
-      origin: busForm.origin.trim(),
-      destination: busForm.destination.trim(),
-      waypoints: busForm.waypoints
-        .split(',')
-        .map((w) => w.trim())
-        .filter(Boolean),
+    const waypoints = busForm.waypoints.split(',').map((w) => w.trim()).filter(Boolean);
+    const input = {
+      busNumber: busForm.busNumber,
+      busName: busForm.busName,
+      routeName: busForm.routeName,
+      origin: busForm.origin,
+      destination: busForm.destination,
+      waypoints,
     };
 
+    if (!editingBusId && buses.some((b) => b.busId === normalizeBusId(input.busNumber))) {
+      setError(`Bus "${normalizeBusId(input.busNumber)}" already exists.`);
+      setBusSaving(false);
+      return;
+    }
+
+    // Geocode + road route (free OSM services, only hit on save)
+    let routePath = null;
+    let stops = null;
+    if (input.origin && input.destination) {
+      try {
+        setBusSaveStatus('Finding places on the map… (a few seconds per stop)');
+        const built = await buildRoute(input.origin, input.destination, waypoints);
+        routePath = built.routePath;
+        stops = built.stops;
+      } catch (err: any) {
+        const keepGoing = window.confirm(
+          `${err?.message ?? 'Route lookup failed.'}\n\nSave the bus without a drawn route? You can edit it again later.`
+        );
+        if (!keepGoing) {
+          setBusSaving(false);
+          setBusSaveStatus('');
+          return;
+        }
+      }
+    }
+
     try {
-      if (editingBus) {
-        const res = await ApiService.updateBus(payload.busId, payload);
-        if (res.data) {
-          setBuses((prev) => prev.map((b: any) => (b.busId || b.id) === payload.busId ? { ...b, ...res.data } : b));
-          setSuccess('Bus updated.');
-        }
+      setBusSaveStatus('Saving…');
+      if (editingBusId) {
+        await updateBus(editingBusId, { ...input, routePath, stops });
+        setSuccess(`Bus ${editingBusId} updated.`);
       } else {
-        const res = await ApiService.createBus(payload);
-        if (res.data) {
-          setBuses((prev) => [...prev, res.data as Bus]);
-          setSuccess('Bus created. Default PIN is 1234.');
-        }
+        const id = await createBus({ ...input, routePath, stops });
+        setSuccess(`Bus ${id} created.`);
       }
       setShowBusModal(false);
-    } catch (e: any) {
-      setError(e.message || 'Failed to save bus.');
+    } catch (err: any) {
+      setError(err?.message ?? 'Saving the bus failed.');
+    } finally {
+      setBusSaving(false);
+      setBusSaveStatus('');
     }
   };
 
-  const handleDeleteBus = async (busId: string) => {
-    if (!window.confirm(`Delete bus ${busId}? This also removes its location history.`)) return;
+  const handleDeleteBus = async (bus: Bus) => {
+    if (!window.confirm(`Delete ${bus.busId} (${bus.busName})? This cannot be undone.`)) return;
     try {
-      await ApiService.deleteBus(busId);
-      setBuses((prev) => prev.filter((b: any) => (b.busId || b.id) !== busId));
-      setSuccess('Bus deleted.');
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete bus.');
-    }
-  };
-
-  const handleSetPin = async () => {
-    if (!newPin || newPin.length < 4) { setError('PIN must be at least 4 digits.'); return; }
-    try {
-      const res = await fetch(`${API_BASE}/bus/${pinBusId}/set-pin`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ newPin }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSuccess(`PIN updated for ${pinBusId}.`);
-        setShowPinModal(false);
-        setNewPin('');
-      } else {
-        setError(data.message || 'Failed to set PIN.');
-      }
+      await deleteBus(bus.busId);
+      setSuccess(`Bus ${bus.busId} deleted.`);
     } catch {
-      setError('Server error while setting PIN.');
+      setError('Deleting the bus failed.');
     }
   };
 
-  // ─── Simulation ───────────────────────────────────────────────────────────
-
-  const handleStartSim = async (busId: string) => {
+  const handleForceRelease = async (bus: Bus) => {
+    if (!window.confirm(`End the current trip on ${bus.busId}? The driver will have to start again.`)) return;
     try {
-      const data = await apiPost('/simulate/start', { busId, intervalMs: 4000 }, token);
-      if (data.success) {
-        setSimRunning(busId);
-        setSimBusId(busId);
-        setSuccess(`Simulation started for ${busId} — students can now see it on the map.`);
-      } else {
-        setError(data.message || 'Failed to start simulation.');
-      }
+      await releaseBus(bus.busId);
+      setSuccess(`Trip on ${bus.busId} ended.`);
     } catch {
-      setError('Server error starting simulation.');
+      setError('Could not end the trip.');
     }
   };
 
-  const handleStopSim = async (busId: string) => {
+  // ─── Driver handlers ────────────────────────────────────────────────────────
+
+  const handleCreateDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDriverSaving(true);
+    setError(null);
     try {
-      const data = await apiPost('/simulate/stop', { busId }, token);
-      if (data.success) {
-        setSimRunning(null);
-        setSimBusId('');
-        setSuccess(`Simulation stopped for ${busId}.`);
-      } else {
-        setError(data.message || 'Failed to stop simulation.');
-      }
-    } catch {
-      setError('Server error stopping simulation.');
+      await createDriverAccount(driverForm);
+      setSuccess(`Driver account for ${driverForm.name} created. They can log in at /login now.`);
+      setShowDriverModal(false);
+      setDriverForm(EMPTY_DRIVER_FORM);
+    } catch (err: any) {
+      setError(
+        err?.code === 'auth/email-already-in-use'
+          ? 'That email already has an account.'
+          : err?.message ?? 'Creating the driver failed.'
+      );
+    } finally {
+      setDriverSaving(false);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('adminEmail');
-    navigate('/admin/login');
+  const handleToggleDriver = async (driver: UserProfile) => {
+    try {
+      await setDriverActive(driver.uid, !driver.active);
+      setSuccess(`${driver.name} is now ${driver.active ? 'deactivated' : 'active'}.`);
+    } catch {
+      setError('Updating the driver failed.');
+    }
   };
 
-  if (isLoading) {
-    return (
-      <div className="full-center">
-        <div className="spinner" />
-        <span style={{ marginTop: 12, color: 'var(--text-muted)' }}>Loading dashboard…</span>
+  // ─── Render helpers ─────────────────────────────────────────────────────────
+
+  const renderOverview = () => (
+    <>
+      <div className="metric-grid">
+        <div className="metric-card">
+          <div className="metric-label">Total buses</div>
+          <div className="metric-value">{buses.length}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">On trip now</div>
+          <div className="metric-value">{onTripCount}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Live GPS</div>
+          <div className="metric-value">{liveCount}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Drivers</div>
+          <div className="metric-value">{drivers.length}</div>
+        </div>
       </div>
-    );
-  }
+
+      <div className="panel">
+        <div className="panel-title">Buses on trip</div>
+        {onTripCount === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>No bus is on a trip right now.</p>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>Bus</th><th>Route</th><th>Driver</th><th>GPS</th><th></th></tr>
+              </thead>
+              <tbody>
+                {buses.filter((b) => b.isActive).map((bus) => (
+                  <tr key={bus.busId}>
+                    <td><strong>{bus.busId}</strong></td>
+                    <td>{bus.routeName || '—'}</td>
+                    <td>{bus.activeDriverName ?? '—'}</td>
+                    <td>
+                      {isFresh(bus)
+                        ? <Badge variant="success">live</Badge>
+                        : <Badge variant="warning">signal lost</Badge>}
+                    </td>
+                    <td>
+                      <Button variant="danger" size="sm" onClick={() => handleForceRelease(bus)}>
+                        End trip
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  const renderBuses = () => (
+    <div className="panel">
+      <div className="section-header">
+        <div className="panel-title" style={{ marginBottom: 0 }}>Buses</div>
+        <Button onClick={openCreateBus}>+ Add bus</Button>
+      </div>
+      {busesLoading ? (
+        <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+      ) : buses.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>
+          No buses yet. Add your first bus — e.g. bus number "BUS-1" with its route.
+        </p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Bus</th><th>Name</th><th>Route</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {buses.map((bus) => (
+                <tr key={bus.busId}>
+                  <td><strong>{bus.busId}</strong></td>
+                  <td>{bus.busName}</td>
+                  <td>
+                    {bus.origin && bus.destination
+                      ? `${bus.origin} → ${bus.destination}`
+                      : bus.routeName || '—'}
+                    {!bus.routePath && bus.origin && (
+                      <span title="No drawn route — edit and re-save to retry the map lookup"> ⚠️</span>
+                    )}
+                  </td>
+                  <td>
+                    {bus.isActive
+                      ? <Badge variant="success">on trip · {bus.activeDriverName}</Badge>
+                      : <Badge variant="info">idle</Badge>}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <Button variant="secondary" size="sm" onClick={() => openEditBus(bus)}>Edit</Button>{' '}
+                    <Button variant="danger" size="sm" onClick={() => handleDeleteBus(bus)}>Delete</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderDrivers = () => (
+    <div className="panel">
+      <div className="section-header">
+        <div className="panel-title" style={{ marginBottom: 0 }}>Drivers</div>
+        <Button onClick={() => setShowDriverModal(true)}>+ Add driver</Button>
+      </div>
+      {drivers.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>
+          No drivers yet. Create a driver account — they log in with it and pick the bus they're driving.
+        </p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Driving now</th><th></th></tr>
+            </thead>
+            <tbody>
+              {drivers.map((driver) => {
+                const drivingBus = buses.find((b) => b.activeDriverId === driver.uid);
+                return (
+                  <tr key={driver.uid}>
+                    <td><strong>{driver.name}</strong></td>
+                    <td>{driver.email}</td>
+                    <td>{driver.phone || '—'}</td>
+                    <td>
+                      {driver.active
+                        ? <Badge variant="success">active</Badge>
+                        : <Badge variant="danger">deactivated</Badge>}
+                    </td>
+                    <td>{drivingBus ? drivingBus.busId : '—'}</td>
+                    <td>
+                      <Button
+                        variant={driver.active ? 'danger' : 'primary'}
+                        size="sm"
+                        onClick={() => handleToggleDriver(driver)}
+                      >
+                        {driver.active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p style={{ color: 'var(--text-muted)', fontSize: '.82rem', marginTop: '1rem' }}>
+        Deactivating stops a driver from starting trips. To fully block their login, also disable the
+        user in Firebase console → Authentication.
+      </p>
+    </div>
+  );
+
+  const renderTracking = () => (
+    <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ height: 'calc(100vh - 180px)', minHeight: 420, position: 'relative' }}>
+        <BusMap
+          buses={buses}
+          selectedBusId={selectedBusId}
+          onSelectBus={setSelectedBusId}
+          follow={!!selectedBusId}
+        />
+      </div>
+    </div>
+  );
+
+  // ─── Layout ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="admin-shell">
       <AdminSidebar />
-
       <div className="admin-main">
-        <Navbar
-          title="Admin Dashboard"
-          subtitle="Fleet & routing management"
-          rightAction={
-            <>
-              <span className="chip">Active: {activeBuses}</span>
-              <Button size="sm" variant="secondary" onClick={handleLogout} className="btn-outline">
-                Log out
-              </Button>
-            </>
-          }
-        />
-
         <div className="admin-content">
+          <div className="section-header">
+            <h1 className="section-title">
+              {tab === 'overview' && 'Dashboard'}
+              {tab === 'buses' && 'Manage Buses'}
+              {tab === 'drivers' && 'Manage Drivers'}
+              {tab === 'tracking' && 'Live Tracking'}
+            </h1>
+            <span className="chip">
+              <span className={`status-dot ${liveCount ? 'live' : 'offline'}`} />
+              {liveCount} live · {onTripCount} on trip
+            </span>
+          </div>
+
           {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
           {success && <Alert type="success" message={success} onClose={() => setSuccess(null)} />}
 
-          {/* ── Metrics ── */}
-          <div className="metric-grid">
-            <div className="metric-card">
-              <div className="metric-label">Total Buses</div>
-              <div className="metric-value">{buses.length}</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Active Now</div>
-              <div className="metric-value" style={{ color: 'var(--success)' }}>{activeBuses}</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Drivers</div>
-              <div className="metric-value">{drivers.length}</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Routes configured</div>
-              <div className="metric-value">
-                {buses.filter((b: any) => b.origin && b.destination).length}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Bus Management ── */}
-          <section className="panel">
-            <div className="section-header">
-              <h2 className="section-title">Buses & Routes</h2>
-              <Button onClick={openAddModal}>+ Add Bus</Button>
-            </div>
-
-            {/* Add / Edit form */}
-            {showBusModal && (
-              <div className="panel" style={{ marginBottom: '1.5rem', background: 'var(--surface-2)' }}>
-                <div className="panel-title">{editingBus ? 'Edit Bus' : 'Add New Bus'}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Bus ID *</label>
-                    <input className="form-control" placeholder="BUS001" value={busForm.busId}
-                      onChange={(e) => setBusForm({ ...busForm, busId: e.target.value })}
-                      disabled={!!editingBus} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Bus Name</label>
-                    <input className="form-control" placeholder="Route 1 Express" value={busForm.busName}
-                      onChange={(e) => setBusForm({ ...busForm, busName: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Driver Name</label>
-                    <input className="form-control" placeholder="Driver name" value={busForm.driverName}
-                      onChange={(e) => setBusForm({ ...busForm, driverName: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Route Label</label>
-                    <input className="form-control" placeholder="Navalur → Agni College" value={busForm.routeName}
-                      onChange={(e) => setBusForm({ ...busForm, routeName: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Origin (for Google Maps)</label>
-                    <input className="form-control" placeholder="Navalur, Chennai" value={busForm.origin}
-                      onChange={(e) => setBusForm({ ...busForm, origin: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Destination (for Google Maps)</label>
-                    <input className="form-control" placeholder="Agni College of Technology" value={busForm.destination}
-                      onChange={(e) => setBusForm({ ...busForm, destination: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
-                    <label className="form-label">Waypoints (comma-separated)</label>
-                    <input className="form-control" placeholder="Sholinganallur, Semmenchery" value={busForm.waypoints}
-                      onChange={(e) => setBusForm({ ...busForm, waypoints: e.target.value })} />
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
-                      These are the stops shown on the student map route line
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
-                  <Button onClick={handleSaveBus}>{editingBus ? 'Update Bus' : 'Save Bus'}</Button>
-                  <Button variant="secondary" onClick={() => setShowBusModal(false)}>Cancel</Button>
-                </div>
-              </div>
-            )}
-
-            {/* PIN modal */}
-            {showPinModal && (
-              <div className="panel" style={{ marginBottom: '1.5rem', background: 'var(--surface-2)', maxWidth: 360 }}>
-                <div className="panel-title">Set PIN for {pinBusId}</div>
-                <div className="form-group">
-                  <label className="form-label">New PIN (min 4 digits)</label>
-                  <input className="form-control" type="password" placeholder="••••" value={newPin}
-                    onChange={(e) => setNewPin(e.target.value)} maxLength={8} />
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <Button onClick={handleSetPin}>Save PIN</Button>
-                  <Button variant="secondary" onClick={() => { setShowPinModal(false); setNewPin(''); }}>Cancel</Button>
-                </div>
-              </div>
-            )}
-
-            {/* Bus table */}
-            {buses.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No buses yet. Click <strong>+ Add Bus</strong> to create one.
-              </div>
-            ) : (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Bus ID</th>
-                      <th>Name</th>
-                      <th>Driver</th>
-                      <th>Route</th>
-                      <th>Origin → Destination</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {buses.map((bus: any) => (
-                      <tr key={bus.busId || bus.id}>
-                        <td><strong>{bus.busId || bus.id}</strong></td>
-                        <td>{bus.busName || bus.busNumber || '—'}</td>
-                        <td>{bus.driverName || '—'}</td>
-                        <td>{bus.routeName || '—'}</td>
-                        <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                          {bus.origin && bus.destination
-                            ? `${bus.origin} → ${bus.destination}`
-                            : <span style={{ color: 'var(--warning)' }}>Not configured</span>}
-                        </td>
-                        <td>
-                          <Badge variant={bus.isActive ? 'success' : 'default' as any}>
-                            {bus.isActive ? 'Active' : 'Idle'}
-                          </Badge>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <Button size="sm" variant="secondary" onClick={() => openEditModal(bus)}>Edit</Button>
-                            <Button size="sm" variant="secondary" onClick={() => { setPinBusId(bus.busId || bus.id); setShowPinModal(true); }}>PIN</Button>
-                            <Button size="sm" variant="danger" onClick={() => handleDeleteBus(bus.busId || bus.id)}>Delete</Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* ── Drivers section ── */}
-          <section className="panel" style={{ marginTop: '1.5rem' }}>
-            <div className="section-header">
-              <h2 className="section-title">Drivers</h2>
-            </div>
-            {drivers.length === 0 ? (
-              <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Drivers are managed via bus assignments above.
-                Each bus has its own driver name and PIN.
-              </div>
-            ) : (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr><th>Name</th><th>Phone</th><th>License</th><th>Status</th></tr>
-                  </thead>
-                  <tbody>
-                    {drivers.map((d) => (
-                      <tr key={d.id}>
-                        <td>{d.name}</td>
-                        <td>{d.phoneNumber}</td>
-                        <td>{d.licenseNumber}</td>
-                        <td><Badge variant={d.status === 'active' ? 'success' : 'danger'}>{d.status}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* ── Simulation ── */}
-          <section className="panel" style={{ marginTop: '1.5rem' }}>
-            <div className="section-header">
-              <h2 className="section-title">Demo Simulation</h2>
-              <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>Testing tool</span>
-            </div>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-              Start a server-side GPS simulation for any bus. Students will see it move on the map in real time — no physical device needed.
-            </p>
-            {buses.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Add a bus first to use simulation.</div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
-                <select
-                  className="form-control"
-                  style={{ width: 'auto', minWidth: 200 }}
-                  value={simBusId}
-                  onChange={(e) => setSimBusId(e.target.value)}
-                  disabled={simRunning !== null}
-                >
-                  <option value="">— Select a bus —</option>
-                  {buses.map((bus: any) => (
-                    <option key={bus.busId || bus.id} value={bus.busId || bus.id}>
-                      {bus.busName || bus.busId || bus.id}
-                    </option>
-                  ))}
-                </select>
-                {simRunning ? (
-                  <Button variant="danger" onClick={() => handleStopSim(simRunning)}>
-                    ■ Stop Simulation ({simRunning})
-                  </Button>
-                ) : (
-                  <Button
-                    disabled={!simBusId}
-                    onClick={() => simBusId && handleStartSim(simBusId)}
-                  >
-                    ▶ Start Simulation
-                  </Button>
-                )}
-                {simRunning && (
-                  <span className="chip" style={{ background: 'rgba(27,122,90,0.1)', color: 'var(--success)' }}>
-                    ● Live — bus moving on map
-                  </span>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* ── Quick help ── */}
-          <section className="panel" style={{ marginTop: '1.5rem', background: 'var(--surface-2)' }}>
-            <div className="panel-title">Setup guide</div>
-            <ol style={{ paddingLeft: '1.2rem', display: 'grid', gap: '0.5rem', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
-              <li>Add a bus with a unique <strong>Bus ID</strong> (e.g. BUS001)</li>
-              <li>Set <strong>Origin</strong>, <strong>Destination</strong> and optional <strong>Waypoints</strong> — these power the route on the student map</li>
-              <li>Give the driver their Bus ID and PIN (default: <strong>1234</strong>) — change it with the PIN button</li>
-              <li>Driver logs in at <strong>/driver/login</strong> and presses Start Tracking</li>
-              <li>Students open <strong>/student</strong> and select the bus to see the live route</li>
-            </ol>
-          </section>
+          {tab === 'overview' && renderOverview()}
+          {tab === 'buses' && renderBuses()}
+          {tab === 'drivers' && renderDrivers()}
+          {tab === 'tracking' && renderTracking()}
         </div>
       </div>
+
+      {/* ── Bus modal ── */}
+      {showBusModal && (
+        <div className="modal-backdrop" onClick={() => !busSaving && setShowBusModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">{editingBusId ? `Edit ${editingBusId}` : 'Add a bus'}</h2>
+            <form onSubmit={handleSaveBus}>
+              <div className="form-group">
+                <label className="form-label">Bus number (this is what the driver picks)</label>
+                <input
+                  className="form-control"
+                  placeholder="e.g. BUS-1"
+                  value={busForm.busNumber}
+                  onChange={(e) => setBusForm({ ...busForm, busNumber: e.target.value })}
+                  disabled={!!editingBusId}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Bus name</label>
+                <input
+                  className="form-control"
+                  placeholder="e.g. Agni Express 1"
+                  value={busForm.busName}
+                  onChange={(e) => setBusForm({ ...busForm, busName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Route name</label>
+                <input
+                  className="form-control"
+                  placeholder="e.g. Navalur – Agni College"
+                  value={busForm.routeName}
+                  onChange={(e) => setBusForm({ ...busForm, routeName: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Starting point</label>
+                <input
+                  className="form-control"
+                  placeholder='e.g. "Navalur, Chennai" — include the city for better matches'
+                  value={busForm.origin}
+                  onChange={(e) => setBusForm({ ...busForm, origin: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Destination</label>
+                <input
+                  className="form-control"
+                  placeholder='e.g. "Agni College of Technology, Thalambur"'
+                  value={busForm.destination}
+                  onChange={(e) => setBusForm({ ...busForm, destination: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Stops along the way (comma-separated, optional)</label>
+                <input
+                  className="form-control"
+                  placeholder="e.g. Padur, Kelambakkam"
+                  value={busForm.waypoints}
+                  onChange={(e) => setBusForm({ ...busForm, waypoints: e.target.value })}
+                />
+              </div>
+              {busSaveStatus && (
+                <p style={{ color: 'var(--primary)', fontSize: '.85rem', marginBottom: '.75rem' }}>
+                  {busSaveStatus}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setShowBusModal(false)} disabled={busSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={busSaving}>
+                  {editingBusId ? 'Save changes' : 'Create bus'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Driver modal ── */}
+      {showDriverModal && (
+        <div className="modal-backdrop" onClick={() => !driverSaving && setShowDriverModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Add a driver</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              This creates a login the driver uses in the app. Share the email and password with them.
+            </p>
+            <form onSubmit={handleCreateDriver}>
+              <div className="form-group">
+                <label className="form-label">Full name</label>
+                <input
+                  className="form-control"
+                  placeholder="Driver's name"
+                  value={driverForm.name}
+                  onChange={(e) => setDriverForm({ ...driverForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Phone</label>
+                <input
+                  className="form-control"
+                  placeholder="Mobile number"
+                  value={driverForm.phone}
+                  onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email (their login)</label>
+                <input
+                  type="email"
+                  className="form-control"
+                  placeholder="driver1@act.edu.in"
+                  value={driverForm.email}
+                  onChange={(e) => setDriverForm({ ...driverForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password (min 6 characters)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Set a password for them"
+                  value={driverForm.password}
+                  onChange={(e) => setDriverForm({ ...driverForm, password: e.target.value })}
+                  minLength={6}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setShowDriverModal(false)} disabled={driverSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={driverSaving}>Create driver</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

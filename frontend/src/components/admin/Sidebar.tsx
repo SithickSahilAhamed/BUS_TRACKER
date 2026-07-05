@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 interface SidebarLink {
   label: string;
@@ -36,15 +37,6 @@ const links: SidebarLink[] = [
     ),
   },
   {
-    label: 'Routes',
-    path: '/admin/routes',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 003 16.382V5.618a1 1 0 011.553-.894L9 7.5m0 0l6.553-3.276A1 1 0 0117 5.618v10.764a1 1 0 01-1.447.894L9 12.5m0 0v7" />
-      </svg>
-    ),
-  },
-  {
     label: 'Live Tracking',
     path: '/admin/tracking',
     icon: (
@@ -59,11 +51,11 @@ export const AdminSidebar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('adminEmail');
-    navigate('/admin/login');
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
   };
 
   return (

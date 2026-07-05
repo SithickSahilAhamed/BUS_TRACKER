@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Costs 1 read per evaluation — used only on cold paths (signup, claim,
+    // admin ops). The hot GPS-write path below never calls this.
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && userData().role == 'admin';
+    }
+
+    function isActiveDriver() {
+      return signedIn() && userData().role == 'driver' && userData().active == true;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+
+      allow create: if
+        // Self-signup: role limited to student/professor, fixed key set —
+        // nobody can grant themselves admin or driver.
+        (request.auth.uid == uid
+          && request.resource.data.role in ['student', 'professor']
+          && request.resource.data.active == true
+          && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'active', 'createdAt']))
+        // Admin creating a driver profile (uid comes from secondary-app signup)
+        || (isAdmin() && request.resource.data.role == 'driver');
+
+      allow update: if
+        (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone']))
+        || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    match /buses/{busId} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        // (a) Driver claims a bus (Start Trip). Only trip fields may change,
+        // the claim must be for themselves, and the bus must be free (or
+        // already theirs — allows re-claim after a phone crash).
+        || (isActiveDriver()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'lastLocation', 'updatedAt'])
+            && request.resource.data.activeDriverId == request.auth.uid
+            && (resource.data.activeDriverId == null
+                || resource.data.activeDriverId == request.auth.uid))
+        // (b) HOT PATH: the current claim-holder streams location or ends the
+        // trip. Pure uid comparison — zero get() reads per GPS write.
+        || (signedIn()
+            && resource.data.activeDriverId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['lastLocation', 'isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'updatedAt']));
+    }
+  }
+}

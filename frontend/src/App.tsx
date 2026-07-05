@@ -1,102 +1,70 @@
 /**
  * Main App Router
- * Routes for Student, Driver, Admin — with login guards
+ * Public: home, login, signup. Everything else is role-gated via RequireRole.
  */
 
-import React, { Suspense } from 'react';
+import { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { LoadingSpinner } from './components/common';
+import { RequireRole } from './components/RequireRole';
 import HomePage from './pages/Home';
+import LoginPage from './pages/Login';
+import SignupPage from './pages/Signup';
 import StudentMapPage from './pages/StudentMap';
-import DriverLoginPage from './pages/DriverLogin';
 import DriverPanelPage from './pages/DriverPanel';
-import AdminLoginPage from './pages/AdminLogin';
 import AdminDashboardPage from './pages/AdminDashboard';
 
-// Redirect to login if no token stored
-const RequireDriverAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const token = localStorage.getItem('authToken');
-  const busId = localStorage.getItem('driverBusId');
-  if (!token || !busId) return <Navigate to="/driver/login" replace />;
-  return <>{children}</>;
-};
-
-const RequireAdminAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const token = localStorage.getItem('authToken');
-  const email = localStorage.getItem('adminEmail');
-  if (!token || !email) return <Navigate to="/admin/login" replace />;
-  return <>{children}</>;
-};
-
-const LoadingFallback = () => (
-  <LoadingSpinner label="Loading…" />
-);
+const LoadingFallback = () => <LoadingSpinner label="Loading…" />;
 
 function App() {
   return (
     <Router>
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
-          {/* Home */}
+          {/* Public */}
           <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
 
-          {/* Student — no auth required, anyone can track */}
-          <Route path="/student" element={<StudentMapPage />} />
-          <Route path="/map" element={<StudentMapPage />} />
+          {/* Branded per-role sign-in doors */}
+          <Route path="/driver/login" element={<LoginPage variant="driver" />} />
+          <Route path="/admin/login" element={<LoginPage variant="admin" />} />
+
+          {/* Live map — any signed-in role */}
+          {['/student', '/map'].map((path) => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <RequireRole roles={['student', 'professor', 'driver', 'admin']}>
+                  <StudentMapPage />
+                </RequireRole>
+              }
+            />
+          ))}
 
           {/* Driver */}
-          <Route path="/driver/login" element={<DriverLoginPage />} />
           <Route
             path="/driver"
             element={
-              <RequireDriverAuth>
+              <RequireRole roles={['driver']}>
                 <DriverPanelPage />
-              </RequireDriverAuth>
+              </RequireRole>
             }
           />
 
           {/* Admin */}
-          <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route
-            path="/admin"
-            element={
-              <RequireAdminAuth>
-                <AdminDashboardPage />
-              </RequireAdminAuth>
-            }
-          />
-          <Route
-            path="/admin/buses"
-            element={
-              <RequireAdminAuth>
-                <AdminDashboardPage />
-              </RequireAdminAuth>
-            }
-          />
-          <Route
-            path="/admin/routes"
-            element={
-              <RequireAdminAuth>
-                <AdminDashboardPage />
-              </RequireAdminAuth>
-            }
-          />
-          <Route
-            path="/admin/drivers"
-            element={
-              <RequireAdminAuth>
-                <AdminDashboardPage />
-              </RequireAdminAuth>
-            }
-          />
-          <Route
-            path="/admin/tracking"
-            element={
-              <RequireAdminAuth>
-                <AdminDashboardPage />
-              </RequireAdminAuth>
-            }
-          />
+          {['/admin', '/admin/buses', '/admin/drivers', '/admin/tracking'].map((path) => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <RequireRole roles={['admin']}>
+                  <AdminDashboardPage />
+                </RequireRole>
+              }
+            />
+          ))}
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
