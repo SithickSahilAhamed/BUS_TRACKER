@@ -1,4 +1,4 @@
-# ACT Bus Tracker 🚌
+# ACT To Go 🚌
 
 Real-time college bus tracking for **Agni College of Technology**. Students and
 professors watch every bus move live on a map; drivers share their phone's GPS;

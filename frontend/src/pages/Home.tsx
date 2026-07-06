@@ -13,18 +13,11 @@ export const HomePage: React.FC = () => {
         <div className="home-nav-inner">
           <div className="home-nav-brand">
             <div className="home-nav-logo">
-              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="32" height="32" rx="8" fill="#0f5d8f"/>
-                <path d="M6 20V13a2 2 0 012-2h16a2 2 0 012 2v7" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
-                <path d="M4 20h24" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
-                <circle cx="10" cy="22" r="2" fill="white"/>
-                <circle cx="22" cy="22" r="2" fill="white"/>
-                <path d="M6 15h20M14 11v9" stroke="white" strokeWidth="1.4" strokeLinecap="round"/>
-              </svg>
+              <img src="/act-logo.jpeg" alt="Agni College of Technology" />
             </div>
             <div>
-              <div className="home-nav-title">Agni College of Technology</div>
-              <div className="home-nav-sub">Campus Bus Tracking System</div>
+              <div className="home-nav-title">ACT To Go</div>
+              <div className="home-nav-sub">Agni College of Technology · Bus Tracking</div>
             </div>
           </div>
           <div className="home-nav-actions">
@@ -230,8 +223,8 @@ export const HomePage: React.FC = () => {
       {/* ── FOOTER ── */}
       <footer className="home-footer">
         <div className="home-footer-inner">
-          <div className="home-footer-brand">Agni College of Technology</div>
-          <div className="home-footer-copy">© 2026 Campus Bus Tracking System · All rights reserved</div>
+          <div className="home-footer-brand">ACT To Go</div>
+          <div className="home-footer-copy">© 2026 Agni College of Technology · All rights reserved</div>
         </div>
       </footer>
     </div>

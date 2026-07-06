@@ -2,7 +2,6 @@
  * DRIVER PANEL
  * Driver signs in with their own account, picks the bus they're driving,
  * starts the trip, and their phone GPS streams to Firestore (throttled).
- * Includes a simulation fallback for demos on devices without GPS.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,23 +13,9 @@ import { claimBus, releaseBus, writeBusLocation } from '../services/firestore';
 import type { LatLng } from '../types';
 
 // Firestore write throttle — keeps a full day of driving inside the free quota
-const WRITE_INTERVAL_MS = 5_000;
+const WRITE_INTERVAL_MS = 10_000;
 const MIN_MOVE_METERS = 10;
-const HEARTBEAT_MS = 25_000; // still write occasionally when stopped at a signal
-
-// Fallback demo route (Navalur → Agni College) when a bus has no saved route
-const SIM_FALLBACK: LatLng[] = [
-  { lat: 12.825, lng: 80.221 },
-  { lat: 12.829, lng: 80.219 },
-  { lat: 12.834, lng: 80.217 },
-  { lat: 12.838, lng: 80.215 },
-  { lat: 12.841, lng: 80.213 },
-  { lat: 12.8435, lng: 80.21 },
-  { lat: 12.845, lng: 80.207 },
-  { lat: 12.846, lng: 80.205 },
-  { lat: 12.847, lng: 80.2035 },
-  { lat: 12.8474, lng: 80.2026 },
-];
+const HEARTBEAT_MS = 30_000; // still write occasionally when stopped at a signal
 
 const haversineMeters = (a: LatLng, b: LatLng): number => {
   const R = 6371000;
@@ -50,7 +35,6 @@ export const DriverPanelPage: React.FC = () => {
   const [selectedBusId, setSelectedBusId] = useState('');
   const [isTracking, setIsTracking] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [isSimMode, setIsSimMode] = useState(false);
   const [gpsAvailable, setGpsAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -61,7 +45,6 @@ export const DriverPanelPage: React.FC = () => {
   const [writeCount, setWriteCount] = useState(0);
 
   const watchIdRef = useRef<number | null>(null);
-  const simTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wakeLockRef = useRef<any>(null);
   const lastWriteRef = useRef<{ at: number; pos: LatLng } | null>(null);
   const trackedBusRef = useRef<string>('');
@@ -170,33 +153,6 @@ export const DriverPanelPage: React.FC = () => {
     }
   }, []);
 
-  // ── Simulation ──────────────────────────────────────────────────────────────
-  const startSimulation = useCallback(
-    (busId: string) => {
-      const bus = buses.find((b) => b.busId === busId);
-      const path = bus?.routePath?.length ? bus.routePath : SIM_FALLBACK;
-      // Walk the whole route in ~40 steps regardless of how detailed it is
-      const step = Math.max(1, Math.ceil(path.length / 40));
-      let idx = 0;
-
-      const tick = () => {
-        const p = path[Math.min(idx, path.length - 1)];
-        handleFix(p, 5, 25 + Math.random() * 20, null);
-        idx = idx + step >= path.length ? 0 : idx + step;
-      };
-      tick();
-      simTimerRef.current = setInterval(tick, 5000);
-    },
-    [buses, handleFix]
-  );
-
-  const stopSimulation = useCallback(() => {
-    if (simTimerRef.current) {
-      clearInterval(simTimerRef.current);
-      simTimerRef.current = null;
-    }
-  }, []);
-
   // ── Start / resume / stop ───────────────────────────────────────────────────
   const beginTracking = useCallback(
     (busId: string) => {
@@ -205,10 +161,9 @@ export const DriverPanelPage: React.FC = () => {
       setWriteCount(0);
       setIsTracking(true);
       acquireWakeLock();
-      if (isSimMode) startSimulation(busId);
-      else startRealGps();
+      startRealGps();
     },
-    [acquireWakeLock, isSimMode, startSimulation, startRealGps]
+    [acquireWakeLock, startRealGps]
   );
 
   const handleStartTrip = async () => {
@@ -222,11 +177,7 @@ export const DriverPanelPage: React.FC = () => {
     try {
       await claimBus(selectedBusId, { uid: user.uid, name: profile.name });
       beginTracking(selectedBusId);
-      setSuccess(
-        isSimMode
-          ? 'Simulation running — the bus is moving on everyone\'s map.'
-          : 'Trip started — your location is live on everyone\'s map. Keep this page open.'
-      );
+      setSuccess('Trip started — your location is live on everyone\'s map. Keep this page open and your screen on.');
     } catch (e) {
       console.error(e);
       setError(
@@ -246,7 +197,6 @@ export const DriverPanelPage: React.FC = () => {
 
   const stopEverything = useCallback(() => {
     stopRealGps();
-    stopSimulation();
     releaseWakeLock();
     trackedBusRef.current = '';
     setIsTracking(false);
@@ -254,7 +204,7 @@ export const DriverPanelPage: React.FC = () => {
     setSpeed(null);
     setAccuracy(null);
     setLastFix(null);
-  }, [stopRealGps, stopSimulation, releaseWakeLock]);
+  }, [stopRealGps, releaseWakeLock]);
 
   const handleEndTrip = async () => {
     const busId = trackedBusRef.current || myBus?.busId;
@@ -355,30 +305,11 @@ export const DriverPanelPage: React.FC = () => {
                 {gpsAvailable === false && (
                   <div className="alert alert-warning">
                     <span>
-                      GPS not available on this device. Turn on location, or use simulation mode
-                      below for a demo.
+                      GPS not available on this device. Turn on location services in your phone
+                      settings, then reload this page.
                     </span>
                   </div>
                 )}
-
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '.6rem',
-                    marginBottom: '1rem',
-                    cursor: 'pointer',
-                    fontSize: '.9rem',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSimMode}
-                    onChange={(e) => setIsSimMode(e.target.checked)}
-                  />
-                  Simulation mode (demo without real GPS)
-                </label>
 
                 <Button
                   fullWidth
@@ -400,10 +331,6 @@ export const DriverPanelPage: React.FC = () => {
                     <div className="status-value">{trackedBusRef.current}</div>
                   </div>
                   <div className="status-card">
-                    <div className="status-label">Mode</div>
-                    <div className="status-value">{isSimMode ? 'Simulation' : 'Live GPS'}</div>
-                  </div>
-                  <div className="status-card">
                     <div className="status-label">Updates sent</div>
                     <div className="status-value">{writeCount}</div>
                   </div>
@@ -417,12 +344,13 @@ export const DriverPanelPage: React.FC = () => {
                   ■ End Trip
                 </Button>
 
-                {!wakeLockSupported && (
-                  <p style={{ fontSize: '.82rem', color: 'var(--warning)', marginTop: '.75rem' }}>
-                    ⚠ Keep this screen on while driving — this browser can't prevent the phone from
-                    sleeping automatically.
-                  </p>
-                )}
+                <div className="alert alert-warning" style={{ marginTop: '.75rem' }}>
+                  <span>
+                    {wakeLockSupported
+                      ? '⚠ Keep this tab open and in the foreground while driving. Your screen will stay on, but switching to another app still pauses GPS updates on most phones.'
+                      : "⚠ Keep this screen on and this tab open while driving — this browser can't prevent the phone from sleeping automatically, which pauses GPS updates."}
+                  </span>
+                </div>
               </>
             )}
 
@@ -431,7 +359,7 @@ export const DriverPanelPage: React.FC = () => {
               <ol style={{ paddingLeft: '1.1rem', margin: '.5rem 0 0', fontSize: '.85rem', color: 'var(--text-muted)', display: 'grid', gap: 4 }}>
                 <li>Select the bus number you're driving today</li>
                 <li>Press <strong>Start Trip</strong> and allow location access</li>
-                <li>Keep this page open while driving</li>
+                <li>Keep this page open and your screen on for the whole trip — the app doesn't send your location while it's in the background</li>
                 <li>Press <strong>End Trip</strong> when you arrive</li>
               </ol>
             </div>
@@ -459,7 +387,7 @@ export const DriverPanelPage: React.FC = () => {
               </div>
             </div>
 
-            {isTracking && !isSimMode && !current && (
+            {isTracking && !current && (
               <div className="alert alert-warning">
                 <span>⚠ Waiting for a GPS fix… make sure location is enabled.</span>
               </div>

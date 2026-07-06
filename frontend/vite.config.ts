@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon-48.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'ACT Bus Tracker',
-        short_name: 'Bus Tracker',
+        name: 'ACT To Go',
+        short_name: 'ACT To Go',
         description: 'Live campus bus tracking for Agni College of Technology',
         start_url: '/',
         scope: '/',
