@@ -57,6 +57,7 @@ export interface Bus {
   activeDriverName: string | null;
   tripStartedAt: Timestamp | null;
   lastLocation: BusLocation | null;
+  boardedStudentIds: string[]; // uids marked boarded this trip; reset when a driver claims the bus
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -71,6 +72,30 @@ export interface BusInput {
   waypoints: string[];
   routePath?: LatLng[] | null;
   stops?: BusStop[] | null;
+}
+
+// ============================================================================
+// DRIVER REPORTS (incident + damage — PROJECT_SPEC.md section 3)
+// ============================================================================
+
+export const INCIDENT_CATEGORIES = ['Accident', 'Breakdown', 'Flat Tyre', 'Heavy Traffic', 'Medical Emergency'] as const;
+export const DAMAGE_CATEGORIES = ['Broken Window', 'Seat Damage', 'Brake Problem', 'Tyre Problem'] as const;
+
+export type ReportType = 'incident' | 'damage';
+export type ReportStatus = 'open' | 'resolved';
+
+export interface DriverReport {
+  id: string; // doc ID
+  type: ReportType;
+  category: string;
+  description: string | null;
+  busId: string;
+  busNumber: string;
+  driverId: string;
+  driverName: string;
+  status: ReportStatus;
+  createdAt: Timestamp;
+  resolvedAt?: Timestamp | null;
 }
 
 // ============================================================================

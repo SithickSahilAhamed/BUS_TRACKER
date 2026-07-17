@@ -6,13 +6,14 @@
  * PROJECT_SPEC.md's full AI ETA description does.
  */
 
-import type { LatLng } from '../types';
+import type { BusStop, LatLng } from '../types';
 
 const EARTH_RADIUS_KM = 6371;
 const FALLBACK_SPEED_KMH = 20; // used when stopped/just started, so ETA isn't infinite
 const MIN_MOVING_SPEED_KMH = 3;
 const ARRIVING_THRESHOLD_KM = 0.15;
 const PASSED_THRESHOLD_KM = -0.15;
+const NEXT_STOP_TOLERANCE_KM = 0.05; // a stop within this of the bus counts as "already there", not "next"
 
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
@@ -96,4 +97,27 @@ export function estimateEta(
 
   const etaMinutes = Math.round((remainingKm / effectiveSpeedKmh) * 60);
   return { remainingKm, etaMinutes, status: 'approaching', approximate };
+}
+
+/**
+ * The next stop ahead of the bus on its saved route (PROJECT_SPEC.md
+ * section 3's "Upcoming Stop Reminder"). Returns null when there's no route
+ * to order stops against, or the bus is past the last stop.
+ */
+export function getNextStop(
+  stops: BusStop[] | null,
+  routePath: LatLng[] | null,
+  busLocation: LatLng | null
+): BusStop | null {
+  if (!stops?.length) return null;
+  if (!busLocation) return stops[0]; // no GPS fix yet — assume the trip hasn't left the first stop
+  if (!routePath || routePath.length < 2) return null; // can't order stops without a route
+
+  const busProgress = progressAlongPath(routePath, busLocation);
+  const ahead = stops
+    .map((stop) => ({ stop, progress: progressAlongPath(routePath, stop) }))
+    .filter(({ progress }) => progress > busProgress + NEXT_STOP_TOLERANCE_KM)
+    .sort((a, b) => a.progress - b.progress);
+
+  return ahead[0]?.stop ?? null;
 }

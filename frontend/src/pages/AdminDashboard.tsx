@@ -21,10 +21,12 @@ import {
   createDriverAccount,
   subscribeToStudents,
   assignStudentStop,
+  subscribeToReports,
+  resolveReport,
   normalizeBusId,
 } from '../services/firestore';
 import { buildRoute } from '../services/geo';
-import type { Bus, UserProfile } from '../types';
+import type { Bus, DriverReport, UserProfile } from '../types';
 
 // ─── Forms ────────────────────────────────────────────────────────────────────
 
@@ -64,12 +66,14 @@ export const AdminDashboardPage: React.FC = () => {
     location.pathname === '/admin/buses' ? 'buses'
     : location.pathname === '/admin/drivers' ? 'drivers'
     : location.pathname === '/admin/students' ? 'students'
+    : location.pathname === '/admin/reports' ? 'reports'
     : location.pathname === '/admin/tracking' ? 'tracking'
     : 'overview';
 
   const { buses, loading: busesLoading } = useBuses();
   const [drivers, setDrivers] = useState<UserProfile[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
+  const [reports, setReports] = useState<DriverReport[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -107,6 +111,13 @@ export const AdminDashboardPage: React.FC = () => {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    const unsub = subscribeToReports(setReports, () =>
+      setError('Could not load reports. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
   // Auto-dismiss toasts
   useEffect(() => {
     if (!success && !error) return;
@@ -116,6 +127,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   const onTripCount = useMemo(() => buses.filter((b) => b.isActive).length, [buses]);
   const liveCount = useMemo(() => buses.filter((b) => b.isActive && isFresh(b)).length, [buses]);
+  const openReportCount = useMemo(() => reports.filter((r) => r.status === 'open').length, [reports]);
 
   // ─── Bus handlers ───────────────────────────────────────────────────────────
 
@@ -289,6 +301,17 @@ export const AdminDashboardPage: React.FC = () => {
     }
   };
 
+  // ─── Report handlers ────────────────────────────────────────────────────────
+
+  const handleResolveReport = async (report: DriverReport) => {
+    try {
+      await resolveReport(report.id);
+      setSuccess(`Report on ${report.busId} marked resolved.`);
+    } catch {
+      setError('Resolving the report failed.');
+    }
+  };
+
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
   const renderOverview = () => (
@@ -309,6 +332,10 @@ export const AdminDashboardPage: React.FC = () => {
         <div className="metric-card">
           <div className="metric-label">Drivers</div>
           <div className="metric-value">{drivers.length}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Open reports</div>
+          <div className="metric-value">{openReportCount}</div>
         </div>
       </div>
 
@@ -495,6 +522,50 @@ export const AdminDashboardPage: React.FC = () => {
     </div>
   );
 
+  const renderReports = () => (
+    <div className="panel">
+      <div className="section-header">
+        <div className="panel-title" style={{ marginBottom: 0 }}>Driver Reports</div>
+      </div>
+      {reports.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>No incident or damage reports yet.</p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Type</th><th>Bus</th><th>Driver</th><th>Details</th><th>When</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {reports.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    {r.type === 'incident' ? '🚧' : '🔧'} {r.category}
+                  </td>
+                  <td><strong>{r.busNumber}</strong></td>
+                  <td>{r.driverName}</td>
+                  <td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td>
+                  <td>{r.createdAt ? r.createdAt.toDate().toLocaleString() : 'just now'}</td>
+                  <td>
+                    {r.status === 'open'
+                      ? <Badge variant="warning">open</Badge>
+                      : <Badge variant="success">resolved</Badge>}
+                  </td>
+                  <td>
+                    {r.status === 'open' && (
+                      <Button variant="secondary" size="sm" onClick={() => handleResolveReport(r)}>
+                        Mark resolved
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   const renderTracking = () => (
     <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ height: 'calc(100vh - 180px)', minHeight: 420, position: 'relative' }}>
@@ -527,6 +598,7 @@ export const AdminDashboardPage: React.FC = () => {
               {tab === 'buses' && 'Manage Buses'}
               {tab === 'drivers' && 'Manage Drivers'}
               {tab === 'students' && 'Students'}
+              {tab === 'reports' && 'Driver Reports'}
               {tab === 'tracking' && 'Live Tracking'}
             </h1>
             <span className="chip">
@@ -542,6 +614,7 @@ export const AdminDashboardPage: React.FC = () => {
           {tab === 'buses' && renderBuses()}
           {tab === 'drivers' && renderDrivers()}
           {tab === 'students' && renderStudents()}
+          {tab === 'reports' && renderReports()}
           {tab === 'tracking' && renderTracking()}
         </div>
       </div>

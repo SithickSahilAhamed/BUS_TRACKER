@@ -7,10 +7,14 @@
 import { deleteApp, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
 import {
+  addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -19,7 +23,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db, firebaseConfig } from '../lib/firebase';
-import type { Bus, BusInput, UserProfile } from '../types';
+import type { Bus, BusInput, DriverReport, ReportType, UserProfile } from '../types';
 
 // ============================================================================
 // BUSES
@@ -63,6 +67,7 @@ export async function createBus(input: BusInput): Promise<string> {
     activeDriverName: null,
     tripStartedAt: null,
     lastLocation: null,
+    boardedStudentIds: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -98,6 +103,16 @@ export async function claimBus(busId: string, driver: { uid: string; name: strin
     activeDriverName: driver.name,
     tripStartedAt: serverTimestamp(),
     lastLocation: null,
+    boardedStudentIds: [],
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Toggles one rider's boarded state for the current trip. Only the bus's
+ *  current driver can call this (enforced by firestore.rules). */
+export async function setStudentBoarded(busId: string, uid: string, boarded: boolean): Promise<void> {
+  await updateDoc(doc(db, 'buses', busId), {
+    boardedStudentIds: boarded ? arrayUnion(uid) : arrayRemove(uid),
     updatedAt: serverTimestamp(),
   });
 }
@@ -215,4 +230,52 @@ export async function createDriverAccount(input: {
     );
   }
   return uid;
+}
+
+// ============================================================================
+// DRIVER REPORTS (incident + damage)
+// ============================================================================
+
+export async function submitDriverReport(input: {
+  type: ReportType;
+  category: string;
+  description: string;
+  busId: string;
+  busNumber: string;
+  driverId: string;
+  driverName: string;
+}): Promise<void> {
+  await addDoc(collection(db, 'reports'), {
+    type: input.type,
+    category: input.category,
+    description: input.description.trim() || null,
+    busId: input.busId,
+    busNumber: input.busNumber,
+    driverId: input.driverId,
+    driverName: input.driverName,
+    status: 'open',
+    createdAt: serverTimestamp(),
+  });
+}
+
+/** Admin-only — enforced by firestore.rules, not just the query. */
+export function subscribeToReports(
+  cb: (reports: DriverReport[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'reports'), orderBy('createdAt', 'desc')),
+    (snap) => {
+      const reports = snap.docs.map((d) => ({ id: d.id, ...d.data() } as DriverReport));
+      cb(reports);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+export async function resolveReport(reportId: string): Promise<void> {
+  await updateDoc(doc(db, 'reports', reportId), {
+    status: 'resolved',
+    resolvedAt: serverTimestamp(),
+  });
 }

@@ -10,11 +10,19 @@
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
-import { Navbar, Alert, Button } from '../components/common';
+import { Navbar, Alert, Button, Select } from '../components/common';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
-import { claimBus, releaseBus } from '../services/firestore';
+import {
+  claimBus,
+  releaseBus,
+  setStudentBoarded,
+  subscribeToStudents,
+  submitDriverReport,
+} from '../services/firestore';
 import { getTrackingState, startTracking, stopTracking, subscribeTracking } from '../services/tracking';
+import { getNextStop } from '../utils/eta';
+import { DAMAGE_CATEGORIES, INCIDENT_CATEGORIES, type ReportType, type UserProfile } from '../types';
 
 const isNativeApp = Capacitor.isNativePlatform();
 
@@ -31,6 +39,13 @@ export const DriverPanelPage: React.FC = () => {
   const [gpsAvailable, setGpsAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [students, setStudents] = useState<UserProfile[]>([]);
+  const [boardingBusy, setBoardingBusy] = useState<string | null>(null); // uid currently being toggled
+
+  // Report Incident / Report Damage modal
+  const [reportType, setReportType] = useState<ReportType | null>(null);
+  const [reportForm, setReportForm] = useState({ category: '', description: '' });
+  const [reportSaving, setReportSaving] = useState(false);
 
   const isTracking = tracking.busId !== null;
 
@@ -39,6 +54,25 @@ export const DriverPanelPage: React.FC = () => {
     () => buses.find((b) => b.activeDriverId === user?.uid) ?? null,
     [buses, user?.uid]
   );
+
+  useEffect(() => {
+    const unsub = subscribeToStudents(setStudents, () => {});
+    return unsub;
+  }, []);
+
+  // Next stop ahead, and who's assigned to board there this trip
+  const nextStop = useMemo(
+    () => (myBus ? getNextStop(myBus.stops, myBus.routePath, myBus.lastLocation) : null),
+    [myBus]
+  );
+  const stopRiders = useMemo(
+    () =>
+      nextStop && myBus
+        ? students.filter((s) => s.assignedBusId === myBus.busId && s.assignedStopName === nextStop.name)
+        : [],
+    [students, myBus, nextStop]
+  );
+  const boardedCount = stopRiders.filter((s) => myBus?.boardedStudentIds?.includes(s.uid)).length;
 
   // ── GPS availability probe ──────────────────────────────────────────────────
   useEffect(() => {
@@ -106,6 +140,49 @@ export const DriverPanelPage: React.FC = () => {
   const claimedElsewhere = (busId: string) => {
     const bus = buses.find((b) => b.busId === busId);
     return !!bus?.activeDriverId && bus.activeDriverId !== user?.uid;
+  };
+
+  const handleToggleBoarded = async (uid: string, boarded: boolean) => {
+    if (!myBus) return;
+    setBoardingBusy(uid);
+    try {
+      await setStudentBoarded(myBus.busId, uid, boarded);
+    } catch {
+      setError('Updating boarding status failed.');
+    } finally {
+      setBoardingBusy(null);
+    }
+  };
+
+  const reportBusId = myBus?.busId || selectedBusId;
+
+  const openReportModal = (type: ReportType) => {
+    setReportType(type);
+    setReportForm({ category: '', description: '' });
+  };
+
+  const handleSubmitReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportType || !user || !profile || !reportBusId) return;
+    const bus = buses.find((b) => b.busId === reportBusId);
+    setReportSaving(true);
+    try {
+      await submitDriverReport({
+        type: reportType,
+        category: reportForm.category,
+        description: reportForm.description,
+        busId: reportBusId,
+        busNumber: bus?.busNumber ?? reportBusId,
+        driverId: user.uid,
+        driverName: profile.name,
+      });
+      setSuccess(`${reportType === 'incident' ? 'Incident' : 'Damage'} report sent to the admin.`);
+      setReportType(null);
+    } catch {
+      setError('Sending the report failed — try again.');
+    } finally {
+      setReportSaving(false);
+    }
   };
 
   const wakeLockSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
@@ -290,8 +367,121 @@ export const DriverPanelPage: React.FC = () => {
               moving. Students, professors and the admin see it instantly.
             </p>
           </div>
+
+          {/* ── Next stop + boarding ── */}
+          {myBus && (
+            <div className="panel">
+              <div className="panel-title">Next Stop</div>
+              {!nextStop ? (
+                <p style={{ color: 'var(--text-muted)' }}>
+                  {myBus.stops?.length
+                    ? 'End of the route — no more stops ahead.'
+                    : 'This bus has no saved stops yet.'}
+                </p>
+              ) : (
+                <>
+                  <div className="status-grid" style={{ marginBottom: '1rem' }}>
+                    <div className="status-card">
+                      <div className="status-label">Stop</div>
+                      <div className="status-value">{nextStop.name}</div>
+                    </div>
+                    <div className="status-card">
+                      <div className="status-label">Boarded</div>
+                      <div className="status-value">{boardedCount} / {stopRiders.length}</div>
+                    </div>
+                  </div>
+
+                  {stopRiders.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '.85rem' }}>
+                      No students are assigned to this stop.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '.4rem' }}>
+                      {stopRiders.map((s) => {
+                        const boarded = !!myBus.boardedStudentIds?.includes(s.uid);
+                        return (
+                          <label
+                            key={s.uid}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '.6rem',
+                              padding: '.5rem .65rem', borderRadius: 'var(--radius)',
+                              background: 'var(--surface-2)', border: '1px solid var(--border)',
+                              fontSize: '.88rem', cursor: boardingBusy ? 'wait' : 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={boarded}
+                              disabled={boardingBusy === s.uid}
+                              onChange={(e) => handleToggleBoarded(s.uid, e.target.checked)}
+                            />
+                            <span style={{ flex: 1, textDecoration: boarded ? 'line-through' : 'none', opacity: boarded ? 0.6 : 1 }}>
+                              {s.name}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Report an issue ── */}
+        <div className="panel" style={{ marginTop: '1.5rem' }}>
+          <div className="panel-title">Report an Issue</div>
+          {!reportBusId ? (
+            <p style={{ color: 'var(--text-muted)' }}>Select your bus above first.</p>
+          ) : (
+            <div style={{ display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
+              <Button variant="secondary" onClick={() => openReportModal('incident')}>
+                🚧 Report Incident
+              </Button>
+              <Button variant="secondary" onClick={() => openReportModal('damage')}>
+                🔧 Report Damage
+              </Button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ── Report modal ── */}
+      {reportType && (
+        <div className="modal-backdrop" onClick={() => !reportSaving && setReportType(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">{reportType === 'incident' ? 'Report Incident' : 'Report Damage'}</h2>
+            <form onSubmit={handleSubmitReport}>
+              <Select
+                label="Category"
+                value={reportForm.category}
+                onChange={(e) => setReportForm({ ...reportForm, category: e.target.value })}
+                options={(reportType === 'incident' ? INCIDENT_CATEGORIES : DAMAGE_CATEGORIES).map((c) => ({ value: c, label: c }))}
+                required
+              />
+              <div className="form-group">
+                <label className="form-label">Details (optional)</label>
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  placeholder="Anything else the admin should know…"
+                  value={reportForm.description}
+                  onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setReportType(null)} disabled={reportSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={reportSaving} disabled={!reportForm.category}>
+                  Send to admin
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -21,7 +21,9 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // Drivers can read rider profiles too — needed for the waiting-student
+      // count and boarding roster on their bus (PROJECT_SPEC.md section 3).
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isActiveDriver());
 
       allow create: if
         // Self-signup: role limited to student/professor, fixed key set,
@@ -53,16 +55,30 @@ service cloud.firestore {
         // already theirs — allows re-claim after a phone crash).
         || (isActiveDriver()
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'lastLocation', 'updatedAt'])
+                 .hasOnly(['isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'lastLocation', 'boardedStudentIds', 'updatedAt'])
             && request.resource.data.activeDriverId == request.auth.uid
             && (resource.data.activeDriverId == null
                 || resource.data.activeDriverId == request.auth.uid))
-        // (b) HOT PATH: the current claim-holder streams location or ends the
-        // trip. Pure uid comparison — zero get() reads per GPS write.
+        // (b) HOT PATH: the current claim-holder streams location, toggles
+        // boarding, or ends the trip. Pure uid comparison — zero get() reads
+        // per GPS write.
         || (signedIn()
             && resource.data.activeDriverId == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['lastLocation', 'isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'updatedAt']));
+                 .hasOnly(['lastLocation', 'isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'boardedStudentIds', 'updatedAt']));
+    }
+
+    match /reports/{reportId} {
+      // Incident/damage reports (PROJECT_SPEC.md section 3). Drivers file
+      // them for admin to triage — nobody but admin reads or resolves them.
+      allow read, update, delete: if isAdmin();
+
+      allow create: if isActiveDriver()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.type in ['incident', 'damage']
+        && request.resource.data.status == 'open'
+        && request.resource.data.keys().hasOnly(
+             ['type', 'category', 'description', 'busId', 'busNumber', 'driverId', 'driverName', 'status', 'createdAt']);
     }
   }
 }
