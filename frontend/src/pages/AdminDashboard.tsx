@@ -6,7 +6,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button, Alert, Badge } from '../components/common';
+import { Button, Alert, Badge, Select } from '../components/common';
 import { AdminSidebar } from '../components/admin/Sidebar';
 import { BusMap, isFresh } from '../components/BusMap';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,8 @@ import {
   subscribeToDrivers,
   setDriverActive,
   createDriverAccount,
+  subscribeToStudents,
+  assignStudentStop,
   normalizeBusId,
 } from '../services/firestore';
 import { buildRoute } from '../services/geo';
@@ -61,11 +63,13 @@ export const AdminDashboardPage: React.FC = () => {
   const tab =
     location.pathname === '/admin/buses' ? 'buses'
     : location.pathname === '/admin/drivers' ? 'drivers'
+    : location.pathname === '/admin/students' ? 'students'
     : location.pathname === '/admin/tracking' ? 'tracking'
     : 'overview';
 
   const { buses, loading: busesLoading } = useBuses();
   const [drivers, setDrivers] = useState<UserProfile[]>([]);
+  const [students, setStudents] = useState<UserProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -81,12 +85,24 @@ export const AdminDashboardPage: React.FC = () => {
   const [driverForm, setDriverForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
   const [driverSaving, setDriverSaving] = useState(false);
 
+  // Assign-stop modal
+  const [assigningStudent, setAssigningStudent] = useState<UserProfile | null>(null);
+  const [assignForm, setAssignForm] = useState<{ busId: string; stopName: string }>({ busId: '', stopName: '' });
+  const [assignSaving, setAssignSaving] = useState(false);
+
   // Tracking tab selection
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribeToDrivers(setDrivers, () =>
       setError('Could not load drivers. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToStudents(setStudents, () =>
+      setError('Could not load students. Are you signed in as admin?')
     );
     return unsub;
   }, []);
@@ -230,6 +246,46 @@ export const AdminDashboardPage: React.FC = () => {
       setSuccess(`${driver.name} is now ${driver.active ? 'deactivated' : 'active'}.`);
     } catch {
       setError('Updating the driver failed.');
+    }
+  };
+
+  // ─── Student assignment handlers ────────────────────────────────────────────
+
+  const openAssignModal = (student: UserProfile) => {
+    setAssigningStudent(student);
+    setAssignForm({ busId: student.assignedBusId ?? '', stopName: student.assignedStopName ?? '' });
+  };
+
+  const assignFormBus = useMemo(
+    () => buses.find((b) => b.busId === assignForm.busId) ?? null,
+    [buses, assignForm.busId]
+  );
+
+  const handleSaveAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assigningStudent) return;
+    setAssignSaving(true);
+    try {
+      await assignStudentStop(assigningStudent.uid, {
+        assignedBusId: assignForm.busId || null,
+        assignedStopName: assignForm.stopName || null,
+      });
+      setSuccess(`${assigningStudent.name}'s bus assignment was updated.`);
+      setAssigningStudent(null);
+    } catch {
+      setError('Saving the assignment failed.');
+    } finally {
+      setAssignSaving(false);
+    }
+  };
+
+  const handleClearAssignment = async (student: UserProfile) => {
+    if (!window.confirm(`Clear ${student.name}'s bus assignment?`)) return;
+    try {
+      await assignStudentStop(student.uid, { assignedBusId: null, assignedStopName: null });
+      setSuccess(`${student.name}'s bus assignment was cleared.`);
+    } catch {
+      setError('Clearing the assignment failed.');
     }
   };
 
@@ -394,6 +450,51 @@ export const AdminDashboardPage: React.FC = () => {
     </div>
   );
 
+  const renderStudents = () => (
+    <div className="panel">
+      <div className="section-header">
+        <div className="panel-title" style={{ marginBottom: 0 }}>Students</div>
+      </div>
+      {students.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>
+          No students or professors have signed up yet.
+        </p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Assigned bus</th><th>Stop</th><th></th></tr>
+            </thead>
+            <tbody>
+              {students.map((student) => {
+                const bus = buses.find((b) => b.busId === student.assignedBusId);
+                return (
+                  <tr key={student.uid}>
+                    <td><strong>{student.name}</strong></td>
+                    <td>{student.email}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{student.role}</td>
+                    <td>{bus ? `${bus.busId} · ${bus.routeName || bus.busName}` : <span style={{ color: 'var(--text-muted)' }}>Not assigned</span>}</td>
+                    <td>{student.assignedStopName || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <Button variant="secondary" size="sm" onClick={() => openAssignModal(student)}>
+                        {student.assignedBusId ? 'Change' : 'Assign'}
+                      </Button>{' '}
+                      {student.assignedBusId && (
+                        <Button variant="danger" size="sm" onClick={() => handleClearAssignment(student)}>
+                          Clear
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   const renderTracking = () => (
     <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ height: 'calc(100vh - 180px)', minHeight: 420, position: 'relative' }}>
@@ -425,6 +526,7 @@ export const AdminDashboardPage: React.FC = () => {
               {tab === 'overview' && 'Dashboard'}
               {tab === 'buses' && 'Manage Buses'}
               {tab === 'drivers' && 'Manage Drivers'}
+              {tab === 'students' && 'Students'}
               {tab === 'tracking' && 'Live Tracking'}
             </h1>
             <span className="chip">
@@ -439,6 +541,7 @@ export const AdminDashboardPage: React.FC = () => {
           {tab === 'overview' && renderOverview()}
           {tab === 'buses' && renderBuses()}
           {tab === 'drivers' && renderDrivers()}
+          {tab === 'students' && renderStudents()}
           {tab === 'tracking' && renderTracking()}
         </div>
       </div>
@@ -580,6 +683,50 @@ export const AdminDashboardPage: React.FC = () => {
                   Cancel
                 </Button>
                 <Button type="submit" isLoading={driverSaving}>Create driver</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assign bus & stop modal ── */}
+      {assigningStudent && (
+        <div className="modal-backdrop" onClick={() => !assignSaving && setAssigningStudent(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Assign {assigningStudent.name}'s bus</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              This is the bus and stop {assigningStudent.name} sees as "My Bus" with a live ETA.
+            </p>
+            <form onSubmit={handleSaveAssignment}>
+              <Select
+                label="Bus"
+                value={assignForm.busId}
+                onChange={(e) => setAssignForm({ busId: e.target.value, stopName: '' })}
+                options={buses.map((b) => ({ value: b.busId, label: `${b.busId} · ${b.routeName || b.busName}` }))}
+                required
+              />
+              {assignForm.busId && (
+                assignFormBus?.stops?.length ? (
+                  <Select
+                    label="Boarding stop"
+                    value={assignForm.stopName}
+                    onChange={(e) => setAssignForm({ ...assignForm, stopName: e.target.value })}
+                    options={assignFormBus.stops.map((s) => ({ value: s.name, label: s.name }))}
+                    required
+                  />
+                ) : (
+                  <p style={{ color: 'var(--warning)', fontSize: '.85rem', marginBottom: '1rem' }}>
+                    This bus has no saved stops yet — edit it in the Buses tab with an origin/destination first.
+                  </p>
+                )
+              )}
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setAssigningStudent(null)} disabled={assignSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={assignSaving} disabled={!assignForm.busId || !assignForm.stopName}>
+                  Save assignment
+                </Button>
               </div>
             </form>
           </div>

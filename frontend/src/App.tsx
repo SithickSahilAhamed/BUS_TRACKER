@@ -54,7 +54,7 @@ function App() {
           />
 
           {/* Admin */}
-          {['/admin', '/admin/buses', '/admin/drivers', '/admin/tracking'].map((path) => (
+          {['/admin', '/admin/buses', '/admin/drivers', '/admin/students', '/admin/tracking'].map((path) => (
             <Route
               key={path}
               path={path}

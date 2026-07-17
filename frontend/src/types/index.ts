@@ -4,7 +4,11 @@ import type { Timestamp } from 'firebase/firestore';
 // USERS
 // ============================================================================
 
-export type UserRole = 'student' | 'professor' | 'driver' | 'admin';
+// 'professor' is this college's own addition (staff also ride buses).
+// 'parent' | 'maintenance' | 'principal' round the set out to the 6 roles in
+// PROJECT_SPEC.md section 1 — modeled now so the schema doesn't change again,
+// but there's no sign-up path or dashboard for them until their phases land.
+export type UserRole = 'student' | 'professor' | 'driver' | 'admin' | 'parent' | 'maintenance' | 'principal';
 
 export interface UserProfile {
   uid: string; // doc ID = Firebase Auth UID
@@ -13,6 +17,8 @@ export interface UserProfile {
   phone?: string;
   role: UserRole;
   active: boolean;
+  assignedBusId?: string | null; // student/professor's permanent bus, set by admin
+  assignedStopName?: string | null; // must match a name in that bus's `stops[]`
   createdAt?: Timestamp;
 }
 

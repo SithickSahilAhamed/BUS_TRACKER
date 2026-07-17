@@ -145,6 +145,34 @@ export async function setDriverActive(uid: string, active: boolean): Promise<voi
   await updateDoc(doc(db, 'users', uid), { active });
 }
 
+// ============================================================================
+// STUDENTS (admin)
+// ============================================================================
+
+export function subscribeToStudents(
+  cb: (students: UserProfile[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'users'), where('role', 'in', ['student', 'professor'])),
+    (snap) => {
+      const students = snap.docs
+        .map((d) => ({ uid: d.id, ...d.data() } as UserProfile))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      cb(students);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+/** Sets or clears a student/professor's permanent bus + boarding stop. */
+export async function assignStudentStop(
+  uid: string,
+  assignment: { assignedBusId: string | null; assignedStopName: string | null }
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), assignment);
+}
+
 /**
  * Admin creates a driver login without losing their own session:
  * a throw-away secondary Firebase app signs the new user up, then the

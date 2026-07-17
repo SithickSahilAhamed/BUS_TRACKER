@@ -3,12 +3,13 @@
  * moving in real time. Data streams straight from Firestore via useBuses.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar, LoadingSpinner } from '../components/common';
 import { BusMap, isFresh } from '../components/BusMap';
 import { useBuses } from '../hooks/useBuses';
 import { useAuth } from '../context/AuthContext';
+import { estimateEta } from '../utils/eta';
 import type { Bus } from '../types';
 
 const statusOf = (bus: Bus): 'live' | 'stale' | 'offline' => {
@@ -30,6 +31,29 @@ const StudentMapPage: React.FC = () => {
     [buses, selectedBusId]
   );
   const liveCount = buses.filter((b) => statusOf(b) === 'live').length;
+
+  const myBus = useMemo(
+    () => buses.find((b) => b.busId === profile?.assignedBusId) ?? null,
+    [buses, profile]
+  );
+  const myStop = useMemo(
+    () => myBus?.stops?.find((s) => s.name === profile?.assignedStopName) ?? null,
+    [myBus, profile]
+  );
+  const myEta = useMemo(
+    () => (myBus?.lastLocation && myStop ? estimateEta(myBus.lastLocation, myStop, myBus.routePath) : null),
+    [myBus, myStop]
+  );
+
+  // Jump straight to the student's own bus the first time it's known —
+  // they can still pick a different one afterward without being overridden.
+  const [autoSelected, setAutoSelected] = useState(false);
+  useEffect(() => {
+    if (!autoSelected && profile?.assignedBusId) {
+      setSelectedBusId(profile.assignedBusId);
+      setAutoSelected(true);
+    }
+  }, [autoSelected, profile]);
 
   const handleLogout = async () => {
     await logout();
@@ -82,6 +106,28 @@ const StudentMapPage: React.FC = () => {
               onSelectBus={setSelectedBusId}
               follow={follow && !!selectedBus}
             />
+
+            {/* My Bus banner — only meaningful for riders, not drivers/admins viewing the map */}
+            {(profile?.role === 'student' || profile?.role === 'professor') && (
+              <div className="map-top-bar" onClick={() => myBus && setSelectedBusId(myBus.busId)} style={{ cursor: myBus ? 'pointer' : 'default' }}>
+                <span style={{ fontWeight: 600 }}>🚌 My Bus</span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {!profile?.assignedBusId || !myBus
+                    ? 'Not assigned yet — contact the transport office'
+                    : !myBus.isActive
+                    ? `${myBus.busId} · not on a trip right now`
+                    : !myBus.lastLocation
+                    ? `${myBus.busId} · waiting for GPS…`
+                    : !myStop
+                    ? `${myBus.busId} · on a trip`
+                    : myEta?.status === 'passed'
+                    ? `${myBus.busId} · already passed ${myStop.name}`
+                    : myEta?.status === 'arriving'
+                    ? `${myBus.busId} · arriving now at ${myStop.name}`
+                    : `${myBus.busId} · ${myEta?.approximate ? '~' : ''}${myEta?.etaMinutes} min to ${myStop.name}`}
+                </span>
+              </div>
+            )}
 
             {/* Bus list panel */}
             <div className="map-panel map-panel-right">
