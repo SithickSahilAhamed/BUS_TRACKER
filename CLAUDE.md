@@ -16,13 +16,13 @@ Deployed as **ACT To Go** for Agni College of Technology — see `README.md` for
 ## Build Phases
 
 - [x] **Phase 1** — Firebase Auth + Firestore schema (all 6 roles modeled; `student`/`professor`/`driver`/`admin` have real sign-up + dashboards, `parent`/`maintenance`/`principal` are typed but have no UI yet — that's Phases 4/6) + Student module (login, assigned bus/stop, live tracking, ETA prediction from current speed + route-projected distance)
-- [~] **Phase 2** — Driver module: start/end trip, GPS sharing (web + native Android background tracking) done. Stop reminders, waiting-student count, boarding status, incident/damage reporting, AI driver assistant — **not done**.
-- [~] **Phase 3** — Admin Dashboard: bus CRUD + route drawing, driver CRUD, live tracking map, student→bus/stop assignment done. Dedicated stop/route management, attendance, missed-bus approval, breakdown management, entry/exit geofence log — **not done**.
+- [x] **Phase 2** — Driver module: start/end trip, GPS sharing (web + native Android background tracking), next-stop reminder, waiting-student count, boarding roster, incident/damage reporting all done. AI driver assistant intentionally deferred to Phase 5 — needs an AI provider decision this app doesn't have yet, not just more client code.
+- [~] **Phase 3** — Admin Dashboard: bus CRUD + route drawing, driver CRUD, live tracking map, student→bus/stop assignment, driver reports (incident/damage) done. Dedicated stop/route management, attendance, missed-bus approval, breakdown management, entry/exit geofence log — **not done**.
 - [ ] **Phase 4** — Fleet Maintenance (vehicle profiles, fuel, service schedule, tyres, battery, document reminders)
 - [ ] **Phase 5** — AI Analytics + AI Chat Assistants (Student/Driver/Admin/Principal)
 - [ ] **Phase 6** — Notifications, Reports (PDF/Excel export), Parent module, Principal dashboard
 
-**Current phase: Phase 1 is functionally complete. Phases 2 and 3 are partially built (see above) — pick ONE gap from either to close next, per the one-phase/feature-per-session rule below.**
+**Current phase: Phases 1 and 2 are functionally complete. Phase 3 is partially built (see above) — pick a remaining gap there, or start Phase 4, per the one-phase/feature-per-session rule below.**
 
 ## Conventions
 - Keep each Claude Code session scoped to ONE phase/feature — do not attempt multiple phases in a single session.
@@ -30,3 +30,4 @@ Deployed as **ACT To Go** for Agni College of Technology — see `README.md` for
 - Update the "Build Phases" checklist and "Current phase" line above as work completes — they drifted out of sync with reality once before, keep them honest.
 - Firestore security rules must reflect the 6 roles defined in section 1 at all times.
 - There is no location-history collection and no backend, so anything needing historical data or server-side computation (traffic-aware ETA, predictive maintenance, AI analytics) needs a deliberate architecture decision first — flag it rather than assuming Cloud Functions are available.
+- To verify a driver- or admin-only flow without real credentials: `firebase emulators:start --only firestore,auth`, then `VITE_USE_EMULATOR=true npm run dev` (see `frontend/src/lib/firebase.ts`) and seed test accounts with `firebase-admin` pointed at `FIRESTORE_EMULATOR_HOST`/`FIREBASE_AUTH_EMULATOR_HOST` — bypasses the self-signup role restrictions entirely, with zero risk to the live project.
