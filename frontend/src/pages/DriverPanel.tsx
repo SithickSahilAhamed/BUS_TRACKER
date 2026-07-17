@@ -9,11 +9,14 @@
 
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { Navbar, Alert, Button } from '../components/common';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
 import { claimBus, releaseBus } from '../services/firestore';
 import { getTrackingState, startTracking, stopTracking, subscribeTracking } from '../services/tracking';
+
+const isNativeApp = Capacitor.isNativePlatform();
 
 const WRITE_INTERVAL_SECONDS = 10;
 
@@ -215,13 +218,22 @@ export const DriverPanelPage: React.FC = () => {
                   ■ End Trip
                 </Button>
 
-                <div className="alert alert-warning" style={{ marginTop: '.75rem' }}>
-                  <span>
-                    {wakeLockSupported
-                      ? '⚠ Keep this tab open and in the foreground while driving. Your screen will stay on, but switching to another app still pauses GPS updates on most phones.'
-                      : "⚠ Keep this screen on and this tab open while driving — this browser can't prevent the phone from sleeping automatically, which pauses GPS updates."}
-                  </span>
-                </div>
+                {isNativeApp ? (
+                  <div className="alert alert-success" style={{ marginTop: '.75rem' }}>
+                    <span>
+                      ✓ Background tracking is active — you can lock your phone or switch apps and
+                      your location will keep sending until you press End Trip.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="alert alert-warning" style={{ marginTop: '.75rem' }}>
+                    <span>
+                      {wakeLockSupported
+                        ? '⚠ Keep this tab open and in the foreground while driving. Your screen will stay on, but switching to another app still pauses GPS updates on most phones.'
+                        : "⚠ Keep this screen on and this tab open while driving — this browser can't prevent the phone from sleeping automatically, which pauses GPS updates."}
+                    </span>
+                  </div>
+                )}
               </>
             )}
 
@@ -230,7 +242,11 @@ export const DriverPanelPage: React.FC = () => {
               <ol style={{ paddingLeft: '1.1rem', margin: '.5rem 0 0', fontSize: '.85rem', color: 'var(--text-muted)', display: 'grid', gap: 4 }}>
                 <li>Select the bus number you're driving today</li>
                 <li>Press <strong>Start Trip</strong> and allow location access</li>
-                <li>Keep this page open and your screen on for the whole trip — the app doesn't send your location while it's in the background</li>
+                <li>
+                  {isNativeApp
+                    ? 'You can lock your phone or switch apps — tracking keeps running until you end the trip'
+                    : "Keep this page open and your screen on for the whole trip — the app doesn't send your location while it's in the background"}
+                </li>
                 <li>Press <strong>End Trip</strong> when you arrive</li>
               </ol>
             </div>

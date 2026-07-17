@@ -8,10 +8,21 @@
  * endTracking() (End Trip / Logout) stops it. A real page reload still
  * resets it, since that clears all JS state — the Driver Panel's existing
  * "Resume" prompt (backed by the Firestore claim) covers that rare case.
+ *
+ * On the web this is still a browser tab, so the OS can freeze GPS updates
+ * once the screen locks or the tab is backgrounded — no website can override
+ * that. Inside the ACT To Go Android app (Capacitor), the same code instead
+ * drives @capacitor-community/background-geolocation, which runs as a
+ * foreground service and keeps sending updates with the screen off or a
+ * different app open, as long as the trip hasn't been ended.
  */
 
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import type { BackgroundGeolocationPlugin, Location as BgLocation, CallbackError } from '@capacitor-community/background-geolocation';
 import { writeBusLocation } from './firestore';
 import type { LatLng } from '../types';
+
+const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
 const WRITE_INTERVAL_MS = 10_000;
 const MIN_MOVE_METERS = 10;
@@ -39,8 +50,11 @@ const EMPTY_STATE: TrackingState = {
   error: null,
 };
 
+const isNative = Capacitor.isNativePlatform();
+
 let state: TrackingState = EMPTY_STATE;
-let watchId: number | null = null;
+let webWatchId: number | null = null;
+let nativeWatcherId: string | null = null;
 let wakeLock: any = null;
 let lastWrite: { at: number; pos: LatLng } | null = null;
 const listeners = new Set<Listener>();
@@ -60,6 +74,8 @@ const haversineMeters = (a: LatLng, b: LatLng): number => {
   return 2 * R * Math.asin(Math.sqrt(s));
 };
 
+// Wake Lock only matters on the web path — the native app stays alive via
+// its own foreground service regardless of screen state.
 const acquireWakeLock = async () => {
   try {
     wakeLock = await (navigator as any).wakeLock?.request('screen');
@@ -73,11 +89,11 @@ const releaseWakeLock = () => {
   wakeLock = null;
 };
 
-if (typeof document !== 'undefined') {
+if (typeof document !== 'undefined' && !isNative) {
   document.addEventListener('visibilitychange', () => {
     // The OS silently drops wake locks when the tab is hidden — re-acquire
     // the moment it's visible again, for whichever page happens to be open.
-    if (document.visibilityState === 'visible' && watchId !== null) acquireWakeLock();
+    if (document.visibilityState === 'visible' && webWatchId !== null) acquireWakeLock();
   });
 }
 
@@ -104,7 +120,7 @@ const handleFix = (pos: LatLng, acc: number | null, spdKmh: number | null, headi
   }
 };
 
-export const isTrackingActive = (): boolean => watchId !== null;
+export const isTrackingActive = (): boolean => webWatchId !== null || nativeWatcherId !== null;
 
 export const getTrackingState = (): TrackingState => state;
 
@@ -113,17 +129,44 @@ export const subscribeTracking = (listener: Listener): (() => void) => {
   return () => listeners.delete(listener);
 };
 
-export const startTracking = (busId: string): void => {
-  if (watchId !== null) return; // already running — survived a route change
-  state = { ...EMPTY_STATE, busId };
-  lastWrite = null;
-  acquireWakeLock();
+const startNativeTracking = async (): Promise<void> => {
+  try {
+    nativeWatcherId = await BackgroundGeolocation.addWatcher(
+      {
+        backgroundTitle: 'ACT To Go — trip in progress',
+        backgroundMessage: 'Sharing your live location with students until you end the trip.',
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: MIN_MOVE_METERS,
+      },
+      (location?: BgLocation, error?: CallbackError) => {
+        if (error) {
+          console.warn('Background GPS error:', error);
+          setState({ error: error.code === 'NOT_AUTHORIZED' ? 'Location permission denied.' : 'GPS signal lost.' });
+          return;
+        }
+        if (!location) return;
+        handleFix(
+          { lat: location.latitude, lng: location.longitude },
+          location.accuracy ?? null,
+          location.speed != null ? location.speed * 3.6 : null, // m/s → km/h
+          location.bearing ?? null
+        );
+      }
+    );
+  } catch (e) {
+    console.error('Could not start background GPS:', e);
+    setState({ error: 'Could not start location tracking — check location permission.' });
+  }
+};
 
+const startWebTracking = (): void => {
   if (!navigator.geolocation) {
     setState({ error: 'GPS not available on this device.' });
     return;
   }
-  watchId = navigator.geolocation.watchPosition(
+  acquireWakeLock();
+  webWatchId = navigator.geolocation.watchPosition(
     (pos) =>
       handleFix(
         { lat: pos.coords.latitude, lng: pos.coords.longitude },
@@ -139,15 +182,34 @@ export const startTracking = (busId: string): void => {
   );
 };
 
+export const startTracking = (busId: string): void => {
+  if (isTrackingActive()) return; // already running — survived a route change
+  state = { ...EMPTY_STATE, busId };
+  lastWrite = null;
+
+  if (isNative) startNativeTracking();
+  else startWebTracking();
+};
+
 /** Stops the GPS watch and wake lock. Does NOT touch the Firestore claim —
  *  callers (End Trip / Logout) release the bus themselves. */
 export const stopTracking = (): void => {
-  if (watchId !== null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
+  if (webWatchId !== null) {
+    navigator.geolocation.clearWatch(webWatchId);
+    webWatchId = null;
+  }
+  if (nativeWatcherId !== null) {
+    BackgroundGeolocation.removeWatcher({ id: nativeWatcherId }).catch(() => {});
+    nativeWatcherId = null;
   }
   releaseWakeLock();
   state = EMPTY_STATE;
   lastWrite = null;
   listeners.forEach((l) => l());
+};
+
+/** Only meaningful on native — lets the driver jump to the app's location
+ *  settings if a permission was permanently denied. */
+export const openNativeLocationSettings = (): void => {
+  if (isNative) BackgroundGeolocation.openSettings().catch(() => {});
 };
