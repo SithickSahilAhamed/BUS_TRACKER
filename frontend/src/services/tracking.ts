@@ -19,7 +19,8 @@
 
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { BackgroundGeolocationPlugin, Location as BgLocation, CallbackError } from '@capacitor-community/background-geolocation';
-import { writeBusLocation } from './firestore';
+import { CAMPUS_CENTER, CAMPUS_GEOFENCE_RADIUS_M } from '../constants';
+import { logGeofenceEvent, writeBusLocation } from './firestore';
 import type { LatLng } from '../types';
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
@@ -57,6 +58,7 @@ let webWatchId: number | null = null;
 let nativeWatcherId: string | null = null;
 let wakeLock: any = null;
 let lastWrite: { at: number; pos: LatLng } | null = null;
+let wasInsideCampus: boolean | null = null; // null = unknown yet (no fix since trip start) — don't log a transition off that
 const listeners = new Set<Listener>();
 
 const setState = (patch: Partial<TrackingState>) => {
@@ -97,11 +99,24 @@ if (typeof document !== 'undefined' && !isNative) {
   });
 }
 
+// Logs "bus entered/left campus" the moment the geofence boundary is
+// crossed — no manual entry, per PROJECT_SPEC.md section 4. Errors are
+// swallowed: a missed log entry shouldn't interrupt GPS tracking.
+const checkGeofence = (busId: string, pos: LatLng) => {
+  const isInside = haversineMeters(pos, CAMPUS_CENTER) <= CAMPUS_GEOFENCE_RADIUS_M;
+  if (wasInsideCampus !== null && wasInsideCampus !== isInside) {
+    logGeofenceEvent(busId, isInside ? 'entry' : 'exit').catch(() => {});
+  }
+  wasInsideCampus = isInside;
+};
+
 const handleFix = (pos: LatLng, acc: number | null, spdKmh: number | null, heading: number | null) => {
   setState({ current: pos, accuracy: acc, speed: spdKmh, lastFix: new Date().toLocaleTimeString() });
 
   const busId = state.busId;
   if (!busId) return;
+
+  checkGeofence(busId, pos);
 
   const now = Date.now();
   const last = lastWrite;
@@ -186,6 +201,7 @@ export const startTracking = (busId: string): void => {
   if (isTrackingActive()) return; // already running — survived a route change
   state = { ...EMPTY_STATE, busId };
   lastWrite = null;
+  wasInsideCampus = null;
 
   if (isNative) startNativeTracking();
   else startWebTracking();

@@ -23,10 +23,16 @@ import {
   assignStudentStop,
   subscribeToReports,
   resolveReport,
+  subscribeToMissedBusRequests,
+  resolveMissedBusRequest,
+  subscribeToEntryExitLogs,
+  suggestAlternativeBuses,
+  reallocateBusRiders,
   normalizeBusId,
 } from '../services/firestore';
 import { buildRoute } from '../services/geo';
-import type { Bus, DriverReport, UserProfile } from '../types';
+import { progressAlongPath } from '../utils/eta';
+import type { Bus, DriverReport, EntryExitLog, MissedBusRequest, UserProfile } from '../types';
 
 // ─── Forms ────────────────────────────────────────────────────────────────────
 
@@ -37,10 +43,11 @@ interface BusForm {
   origin: string;
   destination: string;
   waypoints: string; // comma-separated in the UI
+  capacity: string; // number input, kept as a string until save
 }
 
 const EMPTY_BUS_FORM: BusForm = {
-  busNumber: '', busName: '', routeName: '', origin: '', destination: '', waypoints: '',
+  busNumber: '', busName: '', routeName: '', origin: '', destination: '', waypoints: '', capacity: '',
 };
 
 interface DriverForm {
@@ -51,6 +58,19 @@ interface DriverForm {
 }
 
 const EMPTY_DRIVER_FORM: DriverForm = { name: '', phone: '', email: '', password: '' };
+
+type AttendanceStatus = 'boarded' | 'waiting' | 'likely absent';
+
+/** Boarded beats everything; otherwise compares the rider's stop to the
+ *  bus's current position along its route (same projection as the driver's
+ *  Next Stop panel) to guess whether the bus already went past them. */
+const riderAttendanceStatus = (bus: Bus, stopName: string | null | undefined): AttendanceStatus => {
+  const stop = bus.stops?.find((s) => s.name === stopName);
+  if (!stop || !bus.routePath || bus.routePath.length < 2 || !bus.lastLocation) return 'waiting';
+  const busProgress = progressAlongPath(bus.routePath, bus.lastLocation);
+  const stopProgress = progressAlongPath(bus.routePath, stop);
+  return stopProgress < busProgress - 0.05 ? 'likely absent' : 'waiting';
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -67,6 +87,7 @@ export const AdminDashboardPage: React.FC = () => {
     : location.pathname === '/admin/drivers' ? 'drivers'
     : location.pathname === '/admin/students' ? 'students'
     : location.pathname === '/admin/reports' ? 'reports'
+    : location.pathname === '/admin/attendance' ? 'attendance'
     : location.pathname === '/admin/tracking' ? 'tracking'
     : 'overview';
 
@@ -74,6 +95,8 @@ export const AdminDashboardPage: React.FC = () => {
   const [drivers, setDrivers] = useState<UserProfile[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<DriverReport[]>([]);
+  const [missedBusRequests, setMissedBusRequests] = useState<MissedBusRequest[]>([]);
+  const [entryExitLogs, setEntryExitLogs] = useState<EntryExitLog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -93,6 +116,11 @@ export const AdminDashboardPage: React.FC = () => {
   const [assigningStudent, setAssigningStudent] = useState<UserProfile | null>(null);
   const [assignForm, setAssignForm] = useState<{ busId: string; stopName: string }>({ busId: '', stopName: '' });
   const [assignSaving, setAssignSaving] = useState(false);
+
+  // Breakdown reallocation modal
+  const [reallocatingBus, setReallocatingBus] = useState<Bus | null>(null);
+  const [reallocateTargetId, setReallocateTargetId] = useState('');
+  const [reallocateSaving, setReallocateSaving] = useState(false);
 
   // Tracking tab selection
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
@@ -114,6 +142,20 @@ export const AdminDashboardPage: React.FC = () => {
   useEffect(() => {
     const unsub = subscribeToReports(setReports, () =>
       setError('Could not load reports. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToMissedBusRequests(setMissedBusRequests, () =>
+      setError('Could not load missed-bus requests. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToEntryExitLogs(setEntryExitLogs, () =>
+      setError('Could not load the entry/exit log. Are you signed in as admin?')
     );
     return unsub;
   }, []);
@@ -146,6 +188,7 @@ export const AdminDashboardPage: React.FC = () => {
       origin: bus.origin,
       destination: bus.destination,
       waypoints: bus.waypoints.join(', '),
+      capacity: bus.capacity ? String(bus.capacity) : '',
     });
     setShowBusModal(true);
   };
@@ -163,6 +206,7 @@ export const AdminDashboardPage: React.FC = () => {
       origin: busForm.origin,
       destination: busForm.destination,
       waypoints,
+      capacity: Math.max(0, parseInt(busForm.capacity, 10) || 0),
     };
 
     if (!editingBusId && buses.some((b) => b.busId === normalizeBusId(input.busNumber))) {
@@ -312,6 +356,51 @@ export const AdminDashboardPage: React.FC = () => {
     }
   };
 
+  // ─── Missed bus handlers ────────────────────────────────────────────────────
+
+  const handleMissedBusDecision = async (req: MissedBusRequest, decision: 'approved' | 'denied') => {
+    try {
+      await resolveMissedBusRequest(req.id, decision);
+      setSuccess(`${req.studentName}'s request was ${decision}.`);
+    } catch {
+      setError('Updating the request failed.');
+    }
+  };
+
+  // ─── Breakdown reallocation handlers ────────────────────────────────────────
+
+  const openReallocateModal = (bus: Bus) => {
+    setReallocatingBus(bus);
+    setReallocateTargetId('');
+  };
+
+  const reallocateSuggestions = useMemo(
+    () => (reallocatingBus ? suggestAlternativeBuses(reallocatingBus.busId, buses, students) : []),
+    [reallocatingBus, buses, students]
+  );
+  const reallocateAffectedCount = useMemo(
+    () => (reallocatingBus ? students.filter((s) => s.assignedBusId === reallocatingBus.busId).length : 0),
+    [reallocatingBus, students]
+  );
+
+  const handleReallocate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reallocatingBus || !reallocateTargetId) return;
+    setReallocateSaving(true);
+    try {
+      const count = await reallocateBusRiders(reallocatingBus.busId, reallocateTargetId);
+      setSuccess(
+        `Moved ${count} rider${count === 1 ? '' : 's'} from ${reallocatingBus.busId} to ${reallocateTargetId}. ` +
+          `Their stops were cleared — reassign them in the Students tab.`
+      );
+      setReallocatingBus(null);
+    } catch {
+      setError('Reallocating riders failed.');
+    } finally {
+      setReallocateSaving(false);
+    }
+  };
+
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
   const renderOverview = () => (
@@ -391,7 +480,7 @@ export const AdminDashboardPage: React.FC = () => {
         <div className="table-wrapper">
           <table>
             <thead>
-              <tr><th>Bus</th><th>Name</th><th>Route</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Bus</th><th>Name</th><th>Route</th><th>Seats</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {buses.map((bus) => (
@@ -406,6 +495,7 @@ export const AdminDashboardPage: React.FC = () => {
                       <span title="No drawn route — edit and re-save to retry the map lookup"> ⚠️</span>
                     )}
                   </td>
+                  <td>{bus.capacity || '—'}</td>
                   <td>
                     {bus.isActive
                       ? <Badge variant="success">on trip · {bus.activeDriverName}</Badge>
@@ -413,6 +503,7 @@ export const AdminDashboardPage: React.FC = () => {
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <Button variant="secondary" size="sm" onClick={() => openEditBus(bus)}>Edit</Button>{' '}
+                    <Button variant="secondary" size="sm" onClick={() => openReallocateModal(bus)}>Reallocate riders</Button>{' '}
                     <Button variant="danger" size="sm" onClick={() => handleDeleteBus(bus)}>Delete</Button>
                   </td>
                 </tr>
@@ -566,6 +657,114 @@ export const AdminDashboardPage: React.FC = () => {
     </div>
   );
 
+  const renderAttendance = () => {
+    const activeBuses = buses.filter((b) => b.isActive);
+    const assignedRiders = activeBuses.flatMap((bus) =>
+      students
+        .filter((s) => s.assignedBusId === bus.busId)
+        .map((s) => ({
+          bus,
+          student: s,
+          status: bus.boardedStudentIds?.includes(s.uid)
+            ? ('boarded' as const)
+            : riderAttendanceStatus(bus, s.assignedStopName),
+        }))
+    );
+    const pendingMissedBus = missedBusRequests.filter((r) => r.status === 'pending');
+
+    return (
+      <>
+        <div className="panel">
+          <div className="panel-title">Live Attendance</div>
+          {activeBuses.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>No bus is on a trip right now.</p>
+          ) : assignedRiders.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>No riders are assigned to any bus currently on a trip.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>Bus</th><th>Student</th><th>Stop</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {assignedRiders.map(({ bus, student, status }) => (
+                    <tr key={`${bus.busId}-${student.uid}`}>
+                      <td><strong>{bus.busId}</strong></td>
+                      <td>{student.name}</td>
+                      <td>{student.assignedStopName || '—'}</td>
+                      <td>
+                        {status === 'boarded' && <Badge variant="success">boarded</Badge>}
+                        {status === 'waiting' && <Badge variant="info">waiting</Badge>}
+                        {status === 'likely absent' && <Badge variant="warning">likely absent</Badge>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Missed Bus Requests</div>
+          {pendingMissedBus.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>No pending requests.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>Student</th><th>Missed</th><th>Requested</th><th>When</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {pendingMissedBus.map((r) => (
+                    <tr key={r.id}>
+                      <td><strong>{r.studentName}</strong></td>
+                      <td>{r.originalBusId}</td>
+                      <td>{r.requestedBusNumber}</td>
+                      <td>{r.createdAt ? r.createdAt.toDate().toLocaleString() : 'just now'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <Button size="sm" onClick={() => handleMissedBusDecision(r, 'approved')}>Approve</Button>{' '}
+                        <Button variant="danger" size="sm" onClick={() => handleMissedBusDecision(r, 'denied')}>Deny</Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Campus Entry / Exit Log</div>
+          {entryExitLogs.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>No geofence crossings recorded yet.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>Bus</th><th>Event</th><th>When</th></tr>
+                </thead>
+                <tbody>
+                  {entryExitLogs.slice(0, 50).map((log) => (
+                    <tr key={log.id}>
+                      <td><strong>{log.busNumber}</strong></td>
+                      <td>
+                        {log.event === 'entry'
+                          ? <Badge variant="success">entered campus</Badge>
+                          : <Badge variant="info">left campus</Badge>}
+                      </td>
+                      <td>{log.at ? log.at.toDate().toLocaleString() : 'just now'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  };
+
   const renderTracking = () => (
     <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ height: 'calc(100vh - 180px)', minHeight: 420, position: 'relative' }}>
@@ -599,6 +798,7 @@ export const AdminDashboardPage: React.FC = () => {
               {tab === 'drivers' && 'Manage Drivers'}
               {tab === 'students' && 'Students'}
               {tab === 'reports' && 'Driver Reports'}
+              {tab === 'attendance' && 'Attendance'}
               {tab === 'tracking' && 'Live Tracking'}
             </h1>
             <span className="chip">
@@ -615,6 +815,7 @@ export const AdminDashboardPage: React.FC = () => {
           {tab === 'drivers' && renderDrivers()}
           {tab === 'students' && renderStudents()}
           {tab === 'reports' && renderReports()}
+          {tab === 'attendance' && renderAttendance()}
           {tab === 'tracking' && renderTracking()}
         </div>
       </div>
@@ -643,6 +844,18 @@ export const AdminDashboardPage: React.FC = () => {
                   placeholder="e.g. Agni Express 1"
                   value={busForm.busName}
                   onChange={(e) => setBusForm({ ...busForm, busName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Seating capacity</label>
+                <input
+                  type="number"
+                  min={0}
+                  className="form-control"
+                  placeholder="e.g. 52"
+                  value={busForm.capacity}
+                  onChange={(e) => setBusForm({ ...busForm, capacity: e.target.value })}
                   required
                 />
               </div>
@@ -802,6 +1015,45 @@ export const AdminDashboardPage: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Breakdown reallocation modal ── */}
+      {reallocatingBus && (
+        <div className="modal-backdrop" onClick={() => !reallocateSaving && setReallocatingBus(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Reallocate {reallocatingBus.busId}'s riders</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              {reallocateAffectedCount} rider{reallocateAffectedCount === 1 ? ' is' : 's are'} permanently assigned
+              to {reallocatingBus.busId}. Moving them clears their stop — reassign it per student afterward.
+            </p>
+            {reallocateSuggestions.length === 0 ? (
+              <p style={{ color: 'var(--warning)', fontSize: '.85rem' }}>
+                No other bus has free seats (or capacities aren't set) — nothing to suggest.
+              </p>
+            ) : (
+              <form onSubmit={handleReallocate}>
+                <Select
+                  label="Move riders to"
+                  value={reallocateTargetId}
+                  onChange={(e) => setReallocateTargetId(e.target.value)}
+                  options={reallocateSuggestions.map(({ bus, availableSeats }) => ({
+                    value: bus.busId,
+                    label: `${bus.busId} · ${bus.routeName || bus.busName} — ${availableSeats} seats free`,
+                  }))}
+                  required
+                />
+                <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                  <Button type="button" variant="secondary" onClick={() => setReallocatingBus(null)} disabled={reallocateSaving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" isLoading={reallocateSaving} disabled={!reallocateTargetId}>
+                    Allocate
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

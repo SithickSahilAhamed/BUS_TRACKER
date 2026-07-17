@@ -80,5 +80,31 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(
              ['type', 'category', 'description', 'busId', 'busNumber', 'driverId', 'driverName', 'status', 'createdAt']);
     }
+
+    match /missedBusRequests/{requestId} {
+      // A student requests an alternative bus; only admin approves/denies
+      // (PROJECT_SPEC.md sections 2 + 4). The requester can also read their
+      // own request to see its status.
+      allow read: if isAdmin() || (signedIn() && resource.data.studentId == request.auth.uid);
+      allow update, delete: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(
+             ['studentId', 'studentName', 'originalBusId', 'requestedBusId', 'requestedBusNumber', 'status', 'createdAt']);
+    }
+
+    match /entryExitLogs/{logId} {
+      // Geofence crossings (PROJECT_SPEC.md section 4) — admin-only reading,
+      // written only by the bus's own current driver. Rare (a couple of
+      // writes per trip), so the extra get() here is not the hot GPS path.
+      allow read, update, delete: if isAdmin();
+
+      allow create: if isActiveDriver()
+        && get(/databases/$(database)/documents/buses/$(request.resource.data.busId)).data.activeDriverId == request.auth.uid
+        && request.resource.data.event in ['entry', 'exit']
+        && request.resource.data.keys().hasOnly(['busId', 'busNumber', 'event', 'at']);
+    }
   }
 }

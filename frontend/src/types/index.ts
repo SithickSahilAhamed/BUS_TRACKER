@@ -52,6 +52,7 @@ export interface Bus {
   waypoints: string[];
   routePath: LatLng[] | null; // OSRM polyline, computed at admin save time
   stops: BusStop[] | null; // geocoded origin/waypoints/destination
+  capacity: number; // 0 on buses created before this field existed — admin should set it
   isActive: boolean;
   activeDriverId: string | null;
   activeDriverName: string | null;
@@ -70,6 +71,7 @@ export interface BusInput {
   origin: string;
   destination: string;
   waypoints: string[];
+  capacity: number;
   routePath?: LatLng[] | null;
   stops?: BusStop[] | null;
 }
@@ -96,6 +98,38 @@ export interface DriverReport {
   status: ReportStatus;
   createdAt: Timestamp;
   resolvedAt?: Timestamp | null;
+}
+
+// ============================================================================
+// MISSED BUS RECOVERY (PROJECT_SPEC.md sections 2 + 4)
+// ============================================================================
+
+export type MissedBusStatus = 'pending' | 'approved' | 'denied';
+
+export interface MissedBusRequest {
+  id: string; // doc ID
+  studentId: string;
+  studentName: string;
+  originalBusId: string;
+  requestedBusId: string;
+  requestedBusNumber: string;
+  status: MissedBusStatus;
+  createdAt: Timestamp;
+  resolvedAt?: Timestamp | null;
+}
+
+// ============================================================================
+// ENTRY/EXIT LOG (PROJECT_SPEC.md section 4 — campus geofence)
+// ============================================================================
+
+export type GeofenceEvent = 'entry' | 'exit';
+
+export interface EntryExitLog {
+  id: string; // doc ID
+  busId: string;
+  busNumber: string;
+  event: GeofenceEvent;
+  at: Timestamp;
 }
 
 // ============================================================================

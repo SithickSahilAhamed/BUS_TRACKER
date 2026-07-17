@@ -5,12 +5,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Navbar, LoadingSpinner } from '../components/common';
+import { Navbar, LoadingSpinner, Button } from '../components/common';
 import { BusMap, isFresh } from '../components/BusMap';
 import { useBuses } from '../hooks/useBuses';
 import { useAuth } from '../context/AuthContext';
 import { estimateEta } from '../utils/eta';
-import type { Bus } from '../types';
+import { submitMissedBusRequest, subscribeToMyMissedBusRequests } from '../services/firestore';
+import type { Bus, MissedBusRequest } from '../types';
 
 const statusOf = (bus: Bus): 'live' | 'stale' | 'offline' => {
   if (!bus.isActive) return 'offline';
@@ -44,6 +45,48 @@ const StudentMapPage: React.FC = () => {
     () => (myBus?.lastLocation && myStop ? estimateEta(myBus.lastLocation, myStop, myBus.routePath) : null),
     [myBus, myStop]
   );
+
+  // Missed Bus Recovery (PROJECT_SPEC.md sections 2 + 4)
+  const [myMissedBusRequests, setMyMissedBusRequests] = useState<MissedBusRequest[]>([]);
+  const [showMissedBusModal, setShowMissedBusModal] = useState(false);
+  const [missedBusSaving, setMissedBusSaving] = useState(false);
+
+  useEffect(() => {
+    if (!profile?.uid) return;
+    const unsub = subscribeToMyMissedBusRequests(profile.uid, setMyMissedBusRequests);
+    return unsub;
+  }, [profile?.uid]);
+
+  const hasPendingMissedBusRequest = myMissedBusRequests.some((r) => r.status === 'pending');
+
+  // Other active buses with free seats right now — capacity minus who's
+  // actually boarded, since occupancy for a bus nobody's assigned-count
+  // reflects isn't the point here; what's free on the bus running past you is.
+  const alternativeBuses = useMemo(() => {
+    if (!myBus) return [];
+    return buses
+      .filter((b) => b.busId !== myBus.busId && b.isActive && b.lastLocation)
+      .map((b) => ({ bus: b, availableSeats: Math.max(0, (b.capacity || 0) - (b.boardedStudentIds?.length ?? 0)) }))
+      .filter((b) => b.availableSeats > 0)
+      .sort((a, b) => b.availableSeats - a.availableSeats);
+  }, [buses, myBus]);
+
+  const handleRequestAlternative = async (altBusId: string, altBusNumber: string) => {
+    if (!profile || !myBus) return;
+    setMissedBusSaving(true);
+    try {
+      await submitMissedBusRequest({
+        studentId: profile.uid,
+        studentName: profile.name,
+        originalBusId: myBus.busId,
+        requestedBusId: altBusId,
+        requestedBusNumber: altBusNumber,
+      });
+      setShowMissedBusModal(false);
+    } finally {
+      setMissedBusSaving(false);
+    }
+  };
 
   // Jump straight to the student's own bus the first time it's known —
   // they can still pick a different one afterward without being overridden.
@@ -126,6 +169,15 @@ const StudentMapPage: React.FC = () => {
                     ? `${myBus.busId} · arriving now at ${myStop.name}`
                     : `${myBus.busId} · ${myEta?.approximate ? '~' : ''}${myEta?.etaMinutes} min to ${myStop.name}`}
                 </span>
+                {myEta?.status === 'passed' && !hasPendingMissedBusRequest && (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={(e) => { e.stopPropagation(); setShowMissedBusModal(true); }}
+                  >
+                    Missed your bus?
+                  </button>
+                )}
+                {hasPendingMissedBusRequest && <span className="chip">Alternative bus requested…</span>}
               </div>
             )}
 
@@ -211,6 +263,47 @@ const StudentMapPage: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* ── Missed bus modal ── */}
+      {showMissedBusModal && myBus && (
+        <div className="modal-backdrop" onClick={() => !missedBusSaving && setShowMissedBusModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Missed {myBus.busId}?</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              Pick a bus that's currently running with free seats. The admin approves it before it's official.
+            </p>
+            {alternativeBuses.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)' }}>No other bus is running with free seats right now.</p>
+            ) : (
+              <div style={{ display: 'grid', gap: '.5rem', marginBottom: '1rem' }}>
+                {alternativeBuses.map(({ bus, availableSeats }) => (
+                  <div
+                    key={bus.busId}
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '.6rem .75rem', borderRadius: 'var(--radius)',
+                      background: 'var(--surface-2)', border: '1px solid var(--border)',
+                    }}
+                  >
+                    <span>
+                      <strong>{bus.busId}</strong>
+                      <span style={{ color: 'var(--text-muted)' }}> · {bus.routeName || bus.busName} · {availableSeats} seats free</span>
+                    </span>
+                    <Button size="sm" isLoading={missedBusSaving} onClick={() => handleRequestAlternative(bus.busId, bus.busNumber)}>
+                      Request
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button variant="secondary" onClick={() => setShowMissedBusModal(false)} disabled={missedBusSaving}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

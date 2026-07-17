@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { CAMPUS_CENTER as CAMPUS_CENTER_LATLNG } from '../constants';
 import type { Bus } from '../types';
 
-// Agni College of Technology, Thalambur
-export const CAMPUS_CENTER: [number, number] = [12.8474, 80.2026];
+// Leaflet wants [lat, lng] tuples, not the app's {lat, lng} shape.
+export const CAMPUS_CENTER: [number, number] = [CAMPUS_CENTER_LATLNG.lat, CAMPUS_CENTER_LATLNG.lng];
 
 export const isFresh = (bus: Bus): boolean => {
   const ts = bus.lastLocation?.updatedAt;

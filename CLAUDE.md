@@ -17,12 +17,12 @@ Deployed as **ACT To Go** for Agni College of Technology — see `README.md` for
 
 - [x] **Phase 1** — Firebase Auth + Firestore schema (all 6 roles modeled; `student`/`professor`/`driver`/`admin` have real sign-up + dashboards, `parent`/`maintenance`/`principal` are typed but have no UI yet — that's Phases 4/6) + Student module (login, assigned bus/stop, live tracking, ETA prediction from current speed + route-projected distance)
 - [x] **Phase 2** — Driver module: start/end trip, GPS sharing (web + native Android background tracking), next-stop reminder, waiting-student count, boarding roster, incident/damage reporting all done. AI driver assistant intentionally deferred to Phase 5 — needs an AI provider decision this app doesn't have yet, not just more client code.
-- [~] **Phase 3** — Admin Dashboard: bus CRUD + route drawing, driver CRUD, live tracking map, student→bus/stop assignment, driver reports (incident/damage) done. Dedicated stop/route management, attendance, missed-bus approval, breakdown management, entry/exit geofence log — **not done**.
+- [x] **Phase 3** — Admin Dashboard: bus CRUD + route drawing (now with seating capacity), driver CRUD, live tracking map, student→bus/stop assignment, driver reports, live Attendance (assigned/boarded/likely-absent, computed the same route-projection way as Next Stop — not a historical log), Missed Bus Recovery (student requests + admin approve/deny), Breakdown Management (suggest buses with free seats, bulk-reallocate riders), campus entry/exit geofence log all done. Dedicated Stop/Route entities as their own collections deliberately **not done** — the current bus-owns-its-route model works fine at this fleet's scale and decoupling them is a large rewrite the spec's CRUD wording doesn't actually require.
 - [ ] **Phase 4** — Fleet Maintenance (vehicle profiles, fuel, service schedule, tyres, battery, document reminders)
 - [ ] **Phase 5** — AI Analytics + AI Chat Assistants (Student/Driver/Admin/Principal)
 - [ ] **Phase 6** — Notifications, Reports (PDF/Excel export), Parent module, Principal dashboard
 
-**Current phase: Phases 1 and 2 are functionally complete. Phase 3 is partially built (see above) — pick a remaining gap there, or start Phase 4, per the one-phase/feature-per-session rule below.**
+**Current phase: Phases 1–3 are functionally complete. Start Phase 4 (Fleet Maintenance) next, per the one-phase/feature-per-session rule below.**
 
 ## Conventions
 - Keep each Claude Code session scoped to ONE phase/feature — do not attempt multiple phases in a single session.

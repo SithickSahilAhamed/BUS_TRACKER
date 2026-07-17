@@ -13,6 +13,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -20,10 +21,20 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db, firebaseConfig } from '../lib/firebase';
-import type { Bus, BusInput, DriverReport, ReportType, UserProfile } from '../types';
+import type {
+  Bus,
+  BusInput,
+  DriverReport,
+  EntryExitLog,
+  GeofenceEvent,
+  MissedBusRequest,
+  ReportType,
+  UserProfile,
+} from '../types';
 
 // ============================================================================
 // BUSES
@@ -62,6 +73,7 @@ export async function createBus(input: BusInput): Promise<string> {
     waypoints: input.waypoints,
     routePath: input.routePath ?? null,
     stops: input.stops ?? null,
+    capacity: input.capacity,
     isActive: false,
     activeDriverId: null,
     activeDriverName: null,
@@ -84,6 +96,7 @@ export async function updateBus(busId: string, input: BusInput): Promise<void> {
     waypoints: input.waypoints,
     routePath: input.routePath ?? null,
     stops: input.stops ?? null,
+    capacity: input.capacity,
     updatedAt: serverTimestamp(),
   });
 }
@@ -278,4 +291,137 @@ export async function resolveReport(reportId: string): Promise<void> {
     status: 'resolved',
     resolvedAt: serverTimestamp(),
   });
+}
+
+// ============================================================================
+// MISSED BUS RECOVERY
+// ============================================================================
+
+export async function submitMissedBusRequest(input: {
+  studentId: string;
+  studentName: string;
+  originalBusId: string;
+  requestedBusId: string;
+  requestedBusNumber: string;
+}): Promise<void> {
+  await addDoc(collection(db, 'missedBusRequests'), {
+    ...input,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+}
+
+/** Admin-only: this unfiltered query would be rejected by firestore.rules
+ *  for anyone else — Firestore requires a `where` clause proving every
+ *  possible result is readable, not just each doc's own rule to pass. */
+export function subscribeToMissedBusRequests(
+  cb: (requests: MissedBusRequest[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'missedBusRequests'), orderBy('createdAt', 'desc')),
+    (snap) => {
+      const requests = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MissedBusRequest));
+      cb(requests);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+/** A student's own requests — scoped by the `where` so the rules can allow it. */
+export function subscribeToMyMissedBusRequests(
+  studentId: string,
+  cb: (requests: MissedBusRequest[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'missedBusRequests'), where('studentId', '==', studentId)),
+    (snap) => {
+      const requests = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as MissedBusRequest))
+        .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
+      cb(requests);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+export async function resolveMissedBusRequest(id: string, status: 'approved' | 'denied'): Promise<void> {
+  await updateDoc(doc(db, 'missedBusRequests', id), { status, resolvedAt: serverTimestamp() });
+}
+
+// ============================================================================
+// ENTRY/EXIT LOG (campus geofence — see services/tracking.ts)
+// ============================================================================
+
+export async function logGeofenceEvent(busId: string, event: GeofenceEvent): Promise<void> {
+  await addDoc(collection(db, 'entryExitLogs'), {
+    busId,
+    busNumber: busId,
+    event,
+    at: serverTimestamp(),
+  });
+}
+
+/** Admin-only — enforced by firestore.rules. */
+export function subscribeToEntryExitLogs(
+  cb: (logs: EntryExitLog[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'entryExitLogs'), orderBy('at', 'desc')),
+    (snap) => {
+      const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EntryExitLog));
+      cb(logs);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+// ============================================================================
+// BREAKDOWN MANAGEMENT
+// ============================================================================
+
+export interface AlternativeBus {
+  bus: Bus;
+  assignedRiders: number;
+  availableSeats: number;
+}
+
+/** Buses other than `excludeBusId` with free seats, most-available first.
+ *  "Assigned riders" (not live boarding count) is the occupancy proxy — it's
+ *  the only per-bus headcount available for buses nobody is currently riding. */
+export function suggestAlternativeBuses(
+  excludeBusId: string,
+  buses: Bus[],
+  students: UserProfile[]
+): AlternativeBus[] {
+  return buses
+    .filter((b) => b.busId !== excludeBusId)
+    .map((bus) => {
+      const assignedRiders = students.filter((s) => s.assignedBusId === bus.busId).length;
+      return { bus, assignedRiders, availableSeats: Math.max(0, (bus.capacity || 0) - assignedRiders) };
+    })
+    .filter((b) => b.availableSeats > 0)
+    .sort((a, b) => b.availableSeats - a.availableSeats);
+}
+
+/**
+ * Moves every rider permanently assigned to `fromBusId` onto `toBusId`.
+ * Their stop is cleared (the two buses' stop names rarely match) — admin
+ * re-sets it per student afterward via the Students tab. "Students
+ * automatically notified" (PROJECT_SPEC.md section 4) means their own My Bus
+ * banner reflects the change next time they look; there's no push
+ * notification system yet (that's Phase 6).
+ */
+export async function reallocateBusRiders(fromBusId: string, toBusId: string): Promise<number> {
+  const snap = await getDocs(query(collection(db, 'users'), where('assignedBusId', '==', fromBusId)));
+  if (snap.empty) return 0;
+
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => {
+    batch.update(d.ref, { assignedBusId: toBusId, assignedStopName: null });
+  });
+  await batch.commit();
+  return snap.size;
 }
