@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Alert, Badge, Select } from '../components/common';
 import { AdminSidebar } from '../components/admin/Sidebar';
+import { FleetMaintenanceTab } from '../components/admin/FleetMaintenanceTab';
 import { BusMap, isFresh } from '../components/BusMap';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
@@ -19,6 +20,9 @@ import {
   subscribeToDrivers,
   setDriverActive,
   createDriverAccount,
+  subscribeToMaintenanceStaff,
+  setMaintenanceStaffActive,
+  createMaintenanceAccount,
   subscribeToStudents,
   assignStudentStop,
   subscribeToReports,
@@ -88,11 +92,13 @@ export const AdminDashboardPage: React.FC = () => {
     : location.pathname === '/admin/students' ? 'students'
     : location.pathname === '/admin/reports' ? 'reports'
     : location.pathname === '/admin/attendance' ? 'attendance'
+    : location.pathname === '/admin/maintenance' ? 'maintenance'
     : location.pathname === '/admin/tracking' ? 'tracking'
     : 'overview';
 
   const { buses, loading: busesLoading } = useBuses();
   const [drivers, setDrivers] = useState<UserProfile[]>([]);
+  const [maintenanceStaff, setMaintenanceStaff] = useState<UserProfile[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<DriverReport[]>([]);
   const [missedBusRequests, setMissedBusRequests] = useState<MissedBusRequest[]>([]);
@@ -112,6 +118,11 @@ export const AdminDashboardPage: React.FC = () => {
   const [driverForm, setDriverForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
   const [driverSaving, setDriverSaving] = useState(false);
 
+  // Maintenance staff modal
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [maintenanceForm, setMaintenanceForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
+  const [maintenanceSaving, setMaintenanceSaving] = useState(false);
+
   // Assign-stop modal
   const [assigningStudent, setAssigningStudent] = useState<UserProfile | null>(null);
   const [assignForm, setAssignForm] = useState<{ busId: string; stopName: string }>({ busId: '', stopName: '' });
@@ -128,6 +139,13 @@ export const AdminDashboardPage: React.FC = () => {
   useEffect(() => {
     const unsub = subscribeToDrivers(setDrivers, () =>
       setError('Could not load drivers. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToMaintenanceStaff(setMaintenanceStaff, () =>
+      setError('Could not load maintenance staff. Are you signed in as admin?')
     );
     return unsub;
   }, []);
@@ -302,6 +320,37 @@ export const AdminDashboardPage: React.FC = () => {
       setSuccess(`${driver.name} is now ${driver.active ? 'deactivated' : 'active'}.`);
     } catch {
       setError('Updating the driver failed.');
+    }
+  };
+
+  // ─── Maintenance staff handlers ─────────────────────────────────────────────
+
+  const handleCreateMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMaintenanceSaving(true);
+    setError(null);
+    try {
+      await createMaintenanceAccount(maintenanceForm);
+      setSuccess(`Maintenance account for ${maintenanceForm.name} created. They can log in at /maintenance/login now.`);
+      setShowMaintenanceModal(false);
+      setMaintenanceForm(EMPTY_DRIVER_FORM);
+    } catch (err: any) {
+      setError(
+        err?.code === 'auth/email-already-in-use'
+          ? 'That email already has an account.'
+          : err?.message ?? 'Creating the maintenance account failed.'
+      );
+    } finally {
+      setMaintenanceSaving(false);
+    }
+  };
+
+  const handleToggleMaintenance = async (staff: UserProfile) => {
+    try {
+      await setMaintenanceStaffActive(staff.uid, !staff.active);
+      setSuccess(`${staff.name} is now ${staff.active ? 'deactivated' : 'active'}.`);
+    } catch {
+      setError('Updating the maintenance account failed.');
     }
   };
 
@@ -565,6 +614,47 @@ export const AdminDashboardPage: React.FC = () => {
         Deactivating stops a driver from starting trips. To fully block their login, also disable the
         user in Firebase console → Authentication.
       </p>
+
+      <div className="section-header" style={{ marginTop: '2rem' }}>
+        <div className="panel-title" style={{ marginBottom: 0 }}>Maintenance Team</div>
+        <Button onClick={() => setShowMaintenanceModal(true)}>+ Add maintenance staff</Button>
+      </div>
+      {maintenanceStaff.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>
+          No maintenance accounts yet. They view and close repair requests from the Fleet Maintenance tab.
+        </p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {maintenanceStaff.map((staff) => (
+                <tr key={staff.uid}>
+                  <td><strong>{staff.name}</strong></td>
+                  <td>{staff.email}</td>
+                  <td>{staff.phone || '—'}</td>
+                  <td>
+                    {staff.active
+                      ? <Badge variant="success">active</Badge>
+                      : <Badge variant="danger">deactivated</Badge>}
+                  </td>
+                  <td>
+                    <Button
+                      variant={staff.active ? 'danger' : 'primary'}
+                      size="sm"
+                      onClick={() => handleToggleMaintenance(staff)}
+                    >
+                      {staff.active ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 
@@ -799,6 +889,7 @@ export const AdminDashboardPage: React.FC = () => {
               {tab === 'students' && 'Students'}
               {tab === 'reports' && 'Driver Reports'}
               {tab === 'attendance' && 'Attendance'}
+              {tab === 'maintenance' && 'Fleet Maintenance'}
               {tab === 'tracking' && 'Live Tracking'}
             </h1>
             <span className="chip">
@@ -816,6 +907,7 @@ export const AdminDashboardPage: React.FC = () => {
           {tab === 'students' && renderStudents()}
           {tab === 'reports' && renderReports()}
           {tab === 'attendance' && renderAttendance()}
+          {tab === 'maintenance' && <FleetMaintenanceTab buses={buses} />}
           {tab === 'tracking' && renderTracking()}
         </div>
       </div>
@@ -969,6 +1061,68 @@ export const AdminDashboardPage: React.FC = () => {
                   Cancel
                 </Button>
                 <Button type="submit" isLoading={driverSaving}>Create driver</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Maintenance staff modal ── */}
+      {showMaintenanceModal && (
+        <div className="modal-backdrop" onClick={() => !maintenanceSaving && setShowMaintenanceModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Add maintenance staff</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              This creates a login for the Maintenance Panel. Share the email and password with them.
+            </p>
+            <form onSubmit={handleCreateMaintenance}>
+              <div className="form-group">
+                <label className="form-label">Full name</label>
+                <input
+                  className="form-control"
+                  placeholder="Staff member's name"
+                  value={maintenanceForm.name}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Phone</label>
+                <input
+                  className="form-control"
+                  placeholder="Mobile number"
+                  value={maintenanceForm.phone}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email (their login)</label>
+                <input
+                  type="email"
+                  className="form-control"
+                  placeholder="maintenance1@act.edu.in"
+                  value={maintenanceForm.email}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password (min 6 characters)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Set a password for them"
+                  value={maintenanceForm.password}
+                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, password: e.target.value })}
+                  minLength={6}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setShowMaintenanceModal(false)} disabled={maintenanceSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={maintenanceSaving}>Create account</Button>
               </div>
             </form>
           </div>

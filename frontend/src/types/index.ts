@@ -5,9 +5,8 @@ import type { Timestamp } from 'firebase/firestore';
 // ============================================================================
 
 // 'professor' is this college's own addition (staff also ride buses).
-// 'parent' | 'maintenance' | 'principal' round the set out to the 6 roles in
-// PROJECT_SPEC.md section 1 — modeled now so the schema doesn't change again,
-// but there's no sign-up path or dashboard for them until their phases land.
+// 'maintenance' got its own sign-up + dashboard in Phase 4. 'parent' |
+// 'principal' still just round out the spec's 6 roles for later phases.
 export type UserRole = 'student' | 'professor' | 'driver' | 'admin' | 'parent' | 'maintenance' | 'principal';
 
 export interface UserProfile {
@@ -42,6 +41,20 @@ export interface BusLocation extends LatLng {
   updatedAt: Timestamp | null; // serverTimestamp resolves to null locally for a moment
 }
 
+// PROJECT_SPEC.md section 5 — admin-editable only (see nextServiceDueDate
+// above for the one profile-ish field maintenance staff can also set).
+export interface VehicleProfile {
+  model: string | null;
+  manufacturer: string | null;
+  registrationNumber: string | null;
+  engineNumber: string | null;
+  chassisNumber: string | null;
+  insuranceExpiry: Timestamp | null;
+  permitExpiry: Timestamp | null;
+  fcExpiry: Timestamp | null; // Fitness Certificate
+  pucExpiry: Timestamp | null; // Pollution Under Control certificate
+}
+
 export interface Bus {
   busId: string; // doc ID, normalized bus number e.g. "BUS-1"
   busNumber: string;
@@ -59,6 +72,8 @@ export interface Bus {
   tripStartedAt: Timestamp | null;
   lastLocation: BusLocation | null;
   boardedStudentIds: string[]; // uids marked boarded this trip; reset when a driver claims the bus
+  vehicleProfile: VehicleProfile | null;
+  nextServiceDueDate: Timestamp | null; // separate top-level field (not in vehicleProfile) so firestore.rules can let maintenance staff set just this
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -98,6 +113,11 @@ export interface DriverReport {
   status: ReportStatus;
   createdAt: Timestamp;
   resolvedAt?: Timestamp | null;
+  // Set when a 'damage' report is closed out as a repair (section 5's
+  // "Repair Requests" — reuses the driver's damage report rather than a
+  // separate collection, since "driver submits, maintenance closes" is the
+  // same lifecycle already built in Phase 2).
+  repairNotes?: string | null;
 }
 
 // ============================================================================
@@ -130,6 +150,37 @@ export interface EntryExitLog {
   busNumber: string;
   event: GeofenceEvent;
   at: Timestamp;
+}
+
+// ============================================================================
+// FLEET MAINTENANCE (PROJECT_SPEC.md section 5)
+// ============================================================================
+
+export interface FuelRecord {
+  id: string; // doc ID
+  busId: string;
+  busNumber: string;
+  date: Timestamp; // when fueled — admin-entered, may not equal createdAt
+  litres: number;
+  cost: number;
+  station: string;
+  odometerKm: number | null;
+  createdAt: Timestamp;
+}
+
+export const MAINTENANCE_CATEGORIES = [
+  'Tyres', 'Battery', 'Brake', 'Engine', 'Suspension', 'Oil', 'Service', 'Repair',
+] as const;
+
+export interface MaintenanceRecord {
+  id: string; // doc ID
+  busId: string;
+  busNumber: string;
+  category: string;
+  description: string;
+  cost: number | null;
+  performedAt: Timestamp;
+  createdAt: Timestamp;
 }
 
 // ============================================================================

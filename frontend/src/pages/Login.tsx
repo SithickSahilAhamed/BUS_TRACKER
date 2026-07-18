@@ -3,11 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import type { UserRole } from '../types';
 
-export type LoginVariant = 'general' | 'driver' | 'admin';
+export type LoginVariant = 'general' | 'driver' | 'admin' | 'maintenance';
 
 const homeForRole = (role: UserRole): string => {
   if (role === 'admin') return '/admin';
   if (role === 'driver') return '/driver';
+  if (role === 'maintenance') return '/maintenance';
   return '/map';
 };
 
@@ -37,6 +38,14 @@ const VARIANTS: Record<
     subtitle: 'Manage buses, drivers and live tracking',
     accent: '#e0b84c',
     expect: 'admin',
+    showSignup: false,
+  },
+  maintenance: {
+    icon: '🔧',
+    title: 'Maintenance Sign In',
+    subtitle: 'Use the login your admin gave you',
+    accent: '#c2571f',
+    expect: 'maintenance',
     showSignup: false,
   },
 };
@@ -183,6 +192,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ variant = 'general' }) => {
           {variant !== 'admin' && (
             <Link to="/admin/login" style={{ color: 'rgba(255,255,255,.5)', fontSize: '.82rem' }}>
               Admin login
+            </Link>
+          )}
+          {variant !== 'maintenance' && (
+            <Link to="/maintenance/login" style={{ color: 'rgba(255,255,255,.5)', fontSize: '.82rem' }}>
+              Maintenance login
             </Link>
           )}
         </div>

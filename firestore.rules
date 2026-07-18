@@ -20,6 +20,10 @@ service cloud.firestore {
       return signedIn() && userData().role == 'driver' && userData().active == true;
     }
 
+    function isMaintenance() {
+      return signedIn() && userData().role == 'maintenance' && userData().active == true;
+    }
+
     match /users/{uid} {
       // Drivers can read rider profiles too — needed for the waiting-student
       // count and boarding roster on their bus (PROJECT_SPEC.md section 3).
@@ -33,8 +37,8 @@ service cloud.firestore {
           && request.resource.data.active == true
           && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$')
           && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'active', 'createdAt']))
-        // Admin creating a driver profile (uid comes from secondary-app signup)
-        || (isAdmin() && request.resource.data.role == 'driver'
+        // Admin creating a driver or maintenance profile (uid comes from secondary-app signup)
+        || (isAdmin() && request.resource.data.role in ['driver', 'maintenance']
           && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$'));
 
       allow update: if
@@ -65,13 +69,24 @@ service cloud.firestore {
         || (signedIn()
             && resource.data.activeDriverId == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['lastLocation', 'isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'boardedStudentIds', 'updatedAt']));
+                 .hasOnly(['lastLocation', 'isActive', 'activeDriverId', 'activeDriverName', 'tripStartedAt', 'boardedStudentIds', 'updatedAt']))
+        // (c) Maintenance "schedules maintenance" (PROJECT_SPEC.md section 5)
+        // by setting the service-due date — nothing else on the bus doc.
+        || (isMaintenance()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextServiceDueDate', 'updatedAt']));
     }
 
     match /reports/{reportId} {
       // Incident/damage reports (PROJECT_SPEC.md section 3). Drivers file
-      // them for admin to triage — nobody but admin reads or resolves them.
-      allow read, update, delete: if isAdmin();
+      // them for admin to triage. Maintenance staff additionally get the
+      // damage ones as "Repair Requests" (section 5) — not incidents, those
+      // stay purely operational/admin.
+      allow read: if isAdmin() || (isMaintenance() && resource.data.type == 'damage');
+      allow delete: if isAdmin();
+
+      allow update: if isAdmin()
+        || (isMaintenance() && resource.data.type == 'damage'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedAt', 'repairNotes']));
 
       allow create: if isActiveDriver()
         && request.resource.data.driverId == request.auth.uid
@@ -105,6 +120,20 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/buses/$(request.resource.data.busId)).data.activeDriverId == request.auth.uid
         && request.resource.data.event in ['entry', 'exit']
         && request.resource.data.keys().hasOnly(['busId', 'busNumber', 'event', 'at']);
+    }
+
+    match /fuelRecords/{recordId} {
+      // PROJECT_SPEC.md section 5 fuel management. History, so no update —
+      // fix a mistake by admin deleting and re-adding.
+      allow read, create: if isAdmin() || isMaintenance();
+      allow delete: if isAdmin();
+    }
+
+    match /maintenanceRecords/{recordId} {
+      // Covers section 5's Maintenance History, Tyre Management, and
+      // Battery Management — one log with a category, not three collections.
+      allow read, create: if isAdmin() || isMaintenance();
+      allow delete: if isAdmin();
     }
   }
 }

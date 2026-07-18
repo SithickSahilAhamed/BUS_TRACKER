@@ -64,6 +64,15 @@ const links: SidebarLink[] = [
     ),
   },
   {
+    label: 'Fleet Maintenance',
+    path: '/admin/maintenance',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a4 4 0 104 4l4.5-4.5-2-2L13 6a4 4 0 00-2-2zm0 0L4 11l2 2 7-7M8 13l-4.5 4.5a2.121 2.121 0 003 3L11 16" />
+      </svg>
+    ),
+  },
+  {
     label: 'Live Tracking',
     path: '/admin/tracking',
     icon: (

@@ -30,11 +30,15 @@ import type {
   BusInput,
   DriverReport,
   EntryExitLog,
+  FuelRecord,
   GeofenceEvent,
+  MaintenanceRecord,
   MissedBusRequest,
   ReportType,
   UserProfile,
+  VehicleProfile,
 } from '../types';
+import type { Timestamp } from 'firebase/firestore';
 
 // ============================================================================
 // BUSES
@@ -80,6 +84,8 @@ export async function createBus(input: BusInput): Promise<string> {
     tripStartedAt: null,
     lastLocation: null,
     boardedStudentIds: [],
+    vehicleProfile: null,
+    nextServiceDueDate: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -174,6 +180,30 @@ export async function setDriverActive(uid: string, active: boolean): Promise<voi
 }
 
 // ============================================================================
+// MAINTENANCE TEAM (admin)
+// ============================================================================
+
+export function subscribeToMaintenanceStaff(
+  cb: (staff: UserProfile[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'users'), where('role', '==', 'maintenance')),
+    (snap) => {
+      const staff = snap.docs
+        .map((d) => ({ uid: d.id, ...d.data() } as UserProfile))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      cb(staff);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+export async function setMaintenanceStaffActive(uid: string, active: boolean): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { active });
+}
+
+// ============================================================================
 // STUDENTS (admin)
 // ============================================================================
 
@@ -202,18 +232,16 @@ export async function assignStudentStop(
 }
 
 /**
- * Admin creates a driver login without losing their own session:
- * a throw-away secondary Firebase app signs the new user up, then the
- * profile doc is written from the PRIMARY (admin) session so the
- * "admin creates driver" security rule applies.
+ * Admin creates a driver or maintenance login without losing their own
+ * session: a throw-away secondary Firebase app signs the new user up, then
+ * the profile doc is written from the PRIMARY (admin) session so the
+ * "admin creates staff" security rule applies.
  */
-export async function createDriverAccount(input: {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-}): Promise<string> {
-  const secondary = initializeApp(firebaseConfig, `driver-create-${Date.now()}`);
+async function createStaffAccount(
+  role: 'driver' | 'maintenance',
+  input: { name: string; email: string; phone: string; password: string }
+): Promise<string> {
+  const secondary = initializeApp(firebaseConfig, `${role}-create-${Date.now()}`);
   let uid: string;
   try {
     const cred = await createUserWithEmailAndPassword(
@@ -232,18 +260,24 @@ export async function createDriverAccount(input: {
       name: input.name.trim(),
       email: input.email.trim().toLowerCase(),
       phone: input.phone.trim(),
-      role: 'driver',
+      role,
       active: true,
       createdAt: serverTimestamp(),
     });
   } catch (err) {
     throw new Error(
-      'The login was created but saving the driver profile failed. ' +
+      `The login was created but saving the ${role} profile failed. ` +
         'Delete the user in Firebase console → Authentication and try again.'
     );
   }
   return uid;
 }
+
+export const createDriverAccount = (input: { name: string; email: string; phone: string; password: string }) =>
+  createStaffAccount('driver', input);
+
+export const createMaintenanceAccount = (input: { name: string; email: string; phone: string; password: string }) =>
+  createStaffAccount('maintenance', input);
 
 // ============================================================================
 // DRIVER REPORTS (incident + damage)
@@ -286,11 +320,32 @@ export function subscribeToReports(
   );
 }
 
-export async function resolveReport(reportId: string): Promise<void> {
+export async function resolveReport(reportId: string, repairNotes?: string): Promise<void> {
   await updateDoc(doc(db, 'reports', reportId), {
     status: 'resolved',
     resolvedAt: serverTimestamp(),
+    ...(repairNotes?.trim() ? { repairNotes: repairNotes.trim() } : {}),
   });
+}
+
+/** Maintenance staff's worklist — PROJECT_SPEC.md section 5's "Repair
+ *  Requests" reuses the driver's damage reports rather than a separate
+ *  collection. Scoped by `where` so firestore.rules can allow it (they can't
+ *  read incident reports, only damage ones). */
+export function subscribeToDamageReports(
+  cb: (reports: DriverReport[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'reports'), where('type', '==', 'damage')),
+    (snap) => {
+      const reports = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as DriverReport))
+        .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
+      cb(reports);
+    },
+    (err) => onError?.(err)
+  );
 }
 
 // ============================================================================
@@ -424,4 +479,83 @@ export async function reallocateBusRiders(fromBusId: string, toBusId: string): P
   });
   await batch.commit();
   return snap.size;
+}
+
+// ============================================================================
+// FLEET MAINTENANCE (PROJECT_SPEC.md section 5)
+// ============================================================================
+
+/** Admin-only field set (registration, documents, etc). */
+export async function updateVehicleProfile(busId: string, profile: VehicleProfile): Promise<void> {
+  await updateDoc(doc(db, 'buses', busId), { vehicleProfile: profile, updatedAt: serverTimestamp() });
+}
+
+/** Separate from updateVehicleProfile so maintenance staff can call this
+ *  without needing write access to the rest of the profile (see firestore.rules). */
+export async function setNextServiceDueDate(busId: string, date: Timestamp | null): Promise<void> {
+  await updateDoc(doc(db, 'buses', busId), { nextServiceDueDate: date, updatedAt: serverTimestamp() });
+}
+
+export async function addFuelRecord(input: {
+  busId: string;
+  busNumber: string;
+  date: Date;
+  litres: number;
+  cost: number;
+  station: string;
+  odometerKm: number | null;
+}): Promise<void> {
+  await addDoc(collection(db, 'fuelRecords'), {
+    ...input,
+    date: input.date,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToFuelRecords(
+  busId: string,
+  cb: (records: FuelRecord[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'fuelRecords'), where('busId', '==', busId)),
+    (snap) => {
+      const records = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as FuelRecord))
+        .sort((a, b) => (b.date?.toMillis() ?? 0) - (a.date?.toMillis() ?? 0));
+      cb(records);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+export async function addMaintenanceRecord(input: {
+  busId: string;
+  busNumber: string;
+  category: string;
+  description: string;
+  cost: number | null;
+  performedAt: Date;
+}): Promise<void> {
+  await addDoc(collection(db, 'maintenanceRecords'), {
+    ...input,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToMaintenanceRecords(
+  busId: string,
+  cb: (records: MaintenanceRecord[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'maintenanceRecords'), where('busId', '==', busId)),
+    (snap) => {
+      const records = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as MaintenanceRecord))
+        .sort((a, b) => (b.performedAt?.toMillis() ?? 0) - (a.performedAt?.toMillis() ?? 0));
+      cb(records);
+    },
+    (err) => onError?.(err)
+  );
 }

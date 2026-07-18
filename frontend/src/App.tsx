@@ -13,6 +13,7 @@ import SignupPage from './pages/Signup';
 import StudentMapPage from './pages/StudentMap';
 import DriverPanelPage from './pages/DriverPanel';
 import AdminDashboardPage from './pages/AdminDashboard';
+import MaintenancePanelPage from './pages/MaintenancePanel';
 
 const LoadingFallback = () => <LoadingSpinner label="Loading…" />;
 
@@ -29,6 +30,7 @@ function App() {
           {/* Branded per-role sign-in doors */}
           <Route path="/driver/login" element={<LoginPage variant="driver" />} />
           <Route path="/admin/login" element={<LoginPage variant="admin" />} />
+          <Route path="/maintenance/login" element={<LoginPage variant="maintenance" />} />
 
           {/* Live map — any signed-in role */}
           {['/student', '/map'].map((path) => (
@@ -36,7 +38,7 @@ function App() {
               key={path}
               path={path}
               element={
-                <RequireRole roles={['student', 'professor', 'driver', 'admin']}>
+                <RequireRole roles={['student', 'professor', 'driver', 'admin', 'maintenance']}>
                   <StudentMapPage />
                 </RequireRole>
               }
@@ -53,8 +55,18 @@ function App() {
             }
           />
 
+          {/* Maintenance */}
+          <Route
+            path="/maintenance"
+            element={
+              <RequireRole roles={['maintenance']}>
+                <MaintenancePanelPage />
+              </RequireRole>
+            }
+          />
+
           {/* Admin */}
-          {['/admin', '/admin/buses', '/admin/drivers', '/admin/students', '/admin/reports', '/admin/attendance', '/admin/tracking'].map((path) => (
+          {['/admin', '/admin/buses', '/admin/drivers', '/admin/students', '/admin/reports', '/admin/attendance', '/admin/maintenance', '/admin/tracking'].map((path) => (
             <Route
               key={path}
               path={path}
