@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar, LoadingSpinner, Button } from '../components/common';
 import { BusMap, isFresh } from '../components/BusMap';
+import { ChatAssistant } from '../components/ChatAssistant';
 import { useBuses } from '../hooks/useBuses';
 import { useAuth } from '../context/AuthContext';
 import { estimateEta } from '../utils/eta';
@@ -102,6 +103,15 @@ const StudentMapPage: React.FC = () => {
     await logout();
     navigate('/');
   };
+
+  const buildChatContext = () => ({
+    studentName: profile?.name,
+    assignedBus: myBus ? { busId: myBus.busId, routeName: myBus.routeName, isActive: myBus.isActive } : null,
+    assignedStopName: profile?.assignedStopName ?? null,
+    etaToMyStop: myEta ? { status: myEta.status, etaMinutes: myEta.etaMinutes, approximate: myEta.approximate } : null,
+    missedBusAlternatives: alternativeBuses.map(({ bus, availableSeats }) => ({ busId: bus.busId, routeName: bus.routeName, availableSeats })),
+    allBuses: buses.map((b) => ({ busId: b.busId, routeName: b.routeName, isActive: b.isActive })),
+  });
 
   return (
     <div className="map-wrapper">
@@ -263,6 +273,10 @@ const StudentMapPage: React.FC = () => {
           </>
         )}
       </div>
+
+      {(profile?.role === 'student' || profile?.role === 'professor') && (
+        <ChatAssistant title="Travel Assistant" examplePrompt="When will my bus arrive?" buildContext={buildChatContext} />
+      )}
 
       {/* ── Missed bus modal ── */}
       {showMissedBusModal && myBus && (

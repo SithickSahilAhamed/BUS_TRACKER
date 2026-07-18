@@ -184,6 +184,28 @@ export interface MaintenanceRecord {
 }
 
 // ============================================================================
+// TRIP HISTORY (PROJECT_SPEC.md section 6 — Driver/Route Analysis)
+// ============================================================================
+
+// Logged once, at End Trip. No GPS trail (see services/tracking.ts's
+// comments on write-quota) — just enough to answer "how long" and "how
+// many trips," which is what's honestly derivable without a location
+// history collection or real sensor data (speed/harsh-braking would need
+// one of those; PROJECT_SPEC.md's own Driver Analysis fields for those are
+// not implemented here — see CLAUDE.md).
+export interface TripRecord {
+  id: string; // doc ID
+  busId: string;
+  busNumber: string;
+  routeName: string;
+  driverId: string;
+  driverName: string;
+  startedAt: Timestamp;
+  endedAt: Timestamp;
+  durationMinutes: number;
+}
+
+// ============================================================================
 // UI HELPERS
 // ============================================================================
 

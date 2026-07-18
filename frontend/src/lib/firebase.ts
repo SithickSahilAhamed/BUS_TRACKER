@@ -3,6 +3,7 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
+import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -25,6 +26,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functions = getFunctions(app);
 
 // Opt-in only (`VITE_USE_EMULATOR=true npm run dev`) — never runs in a
 // production build. Points the client at a local Firebase Emulator Suite
@@ -33,7 +35,8 @@ export const db = getFirestore(app);
 if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATOR === 'true') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
-  console.warn('Using local Firebase emulators (Auth :9099, Firestore :8080), not the live project.');
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  console.warn('Using local Firebase emulators (Auth :9099, Firestore :8080, Functions :5001), not the live project.');
 }
 
 export default app;

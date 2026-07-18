@@ -19,6 +19,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
@@ -35,10 +36,10 @@ import type {
   MaintenanceRecord,
   MissedBusRequest,
   ReportType,
+  TripRecord,
   UserProfile,
   VehicleProfile,
 } from '../types';
-import type { Timestamp } from 'firebase/firestore';
 
 // ============================================================================
 // BUSES
@@ -556,6 +557,54 @@ export function subscribeToMaintenanceRecords(
         .sort((a, b) => (b.performedAt?.toMillis() ?? 0) - (a.performedAt?.toMillis() ?? 0));
       cb(records);
     },
+    (err) => onError?.(err)
+  );
+}
+
+// ============================================================================
+// ANALYTICS (PROJECT_SPEC.md section 6 — fleet-wide, admin-only reads)
+// ============================================================================
+
+export async function logCompletedTrip(input: {
+  busId: string;
+  busNumber: string;
+  routeName: string;
+  driverId: string;
+  driverName: string;
+  startedAt: Timestamp;
+}): Promise<void> {
+  const endedAt = Timestamp.now();
+  await addDoc(collection(db, 'trips'), {
+    ...input,
+    endedAt,
+    durationMinutes: Math.max(0, Math.round((endedAt.toMillis() - input.startedAt.toMillis()) / 60000)),
+  });
+}
+
+export function subscribeToTrips(
+  cb: (trips: TripRecord[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'trips'), orderBy('endedAt', 'desc')),
+    (snap) => {
+      const trips = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TripRecord));
+      cb(trips);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+/** Fleet-wide fuel records for Fuel/Route Analysis — admin's broad read
+ *  access (see firestore.rules) covers an unscoped query, unlike the
+ *  per-bus subscribeToFuelRecords used on the Fleet Maintenance tab. */
+export function subscribeToAllFuelRecords(
+  cb: (records: FuelRecord[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'fuelRecords'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FuelRecord))),
     (err) => onError?.(err)
   );
 }

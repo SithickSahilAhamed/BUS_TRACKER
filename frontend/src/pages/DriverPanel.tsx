@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { Navbar, Alert, Button, Select } from '../components/common';
+import { ChatAssistant } from '../components/ChatAssistant';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
 import {
@@ -19,6 +20,7 @@ import {
   setStudentBoarded,
   subscribeToStudents,
   submitDriverReport,
+  logCompletedTrip,
 } from '../services/firestore';
 import { getTrackingState, startTracking, stopTracking, subscribeTracking } from '../services/tracking';
 import { getNextStop } from '../utils/eta';
@@ -116,11 +118,30 @@ export const DriverPanelPage: React.FC = () => {
     setSuccess('Tracking resumed.');
   };
 
+  // Best-effort — a failed trip-history write shouldn't block ending the
+  // trip itself, so errors here are swallowed (unlike releaseBus's).
+  const logTripIfPossible = async (bus: typeof myBus) => {
+    if (!bus || !user || !profile || !bus.tripStartedAt) return;
+    try {
+      await logCompletedTrip({
+        busId: bus.busId,
+        busNumber: bus.busNumber,
+        routeName: bus.routeName,
+        driverId: user.uid,
+        driverName: profile.name,
+        startedAt: bus.tripStartedAt,
+      });
+    } catch (e) {
+      console.warn('Could not log trip history:', e);
+    }
+  };
+
   const handleEndTrip = async () => {
     const busId = tracking.busId || myBus?.busId;
     setIsBusy(true);
     try {
       stopTracking();
+      await logTripIfPossible(myBus);
       if (busId) await releaseBus(busId);
       setSuccess('Trip ended. You are no longer visible on the map.');
     } catch {
@@ -132,7 +153,10 @@ export const DriverPanelPage: React.FC = () => {
 
   const handleLogout = async () => {
     stopTracking();
-    if (myBus) await releaseBus(myBus.busId).catch(() => {});
+    if (myBus) {
+      await logTripIfPossible(myBus);
+      await releaseBus(myBus.busId).catch(() => {});
+    }
     await logout();
     navigate('/');
   };
@@ -186,6 +210,15 @@ export const DriverPanelPage: React.FC = () => {
   };
 
   const wakeLockSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
+
+  const buildChatContext = () => ({
+    driverName: profile?.name,
+    tripStatus: isTracking ? 'on trip, GPS broadcasting' : myBus ? 'has a claimed bus but not currently tracking' : 'not on a trip',
+    currentBus: myBus ? { busId: myBus.busId, routeName: myBus.routeName } : null,
+    nextStop: nextStop
+      ? { name: nextStop.name, waitingCount: stopRiders.length - boardedCount, boardedCount, totalAssignedHere: stopRiders.length }
+      : null,
+  });
 
   return (
     <div className="campus-shell">
@@ -446,6 +479,8 @@ export const DriverPanelPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <ChatAssistant title="Driver Assistant" examplePrompt="Which stop has the most students waiting?" buildContext={buildChatContext} />
 
       {/* ── Report modal ── */}
       {reportType && (

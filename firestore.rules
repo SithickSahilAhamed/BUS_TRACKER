@@ -135,5 +135,14 @@ service cloud.firestore {
       allow read, create: if isAdmin() || isMaintenance();
       allow delete: if isAdmin();
     }
+
+    match /trips/{tripId} {
+      // Logged once at End Trip (PROJECT_SPEC.md section 6 — Driver/Route
+      // Analysis). A driver can only self-attribute their own completed
+      // trip; no cross-reference to the bus doc needed (unlike
+      // entryExitLogs) since driverId == self is enough to prove it's theirs.
+      allow read: if isAdmin();
+      allow create: if isActiveDriver() && request.resource.data.driverId == request.auth.uid;
+    }
   }
 }

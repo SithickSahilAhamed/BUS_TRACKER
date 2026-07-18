@@ -9,6 +9,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Alert, Badge, Select } from '../components/common';
 import { AdminSidebar } from '../components/admin/Sidebar';
 import { FleetMaintenanceTab } from '../components/admin/FleetMaintenanceTab';
+import { AnalyticsTab } from '../components/admin/AnalyticsTab';
+import { ChatAssistant } from '../components/ChatAssistant';
 import { BusMap, isFresh } from '../components/BusMap';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
@@ -93,6 +95,7 @@ export const AdminDashboardPage: React.FC = () => {
     : location.pathname === '/admin/reports' ? 'reports'
     : location.pathname === '/admin/attendance' ? 'attendance'
     : location.pathname === '/admin/maintenance' ? 'maintenance'
+    : location.pathname === '/admin/analytics' ? 'analytics'
     : location.pathname === '/admin/tracking' ? 'tracking'
     : 'overview';
 
@@ -868,6 +871,21 @@ export const AdminDashboardPage: React.FC = () => {
     </div>
   );
 
+  const buildChatContext = () => ({
+    fleetSummary: { totalBuses: buses.length, onTripNow: onTripCount, liveGps: liveCount, drivers: drivers.length },
+    openReports: reports.filter((r) => r.status === 'open').map((r) => ({ busNumber: r.busNumber, type: r.type, category: r.category })),
+    buses: buses.map((b) => ({
+      busId: b.busId,
+      routeName: b.routeName,
+      capacity: b.capacity,
+      isActive: b.isActive,
+      assignedRiders: students.filter((s) => s.assignedBusId === b.busId).length,
+      nextServiceDueDate: b.nextServiceDueDate ? b.nextServiceDueDate.toDate().toISOString().slice(0, 10) : null,
+      documentsSet: !!b.vehicleProfile,
+    })),
+    drivers: drivers.map((d) => ({ name: d.name, active: d.active, currentlyDriving: buses.find((b) => b.activeDriverId === d.uid)?.busId ?? null })),
+  });
+
   // ─── Layout ─────────────────────────────────────────────────────────────────
 
   return (
@@ -890,6 +908,7 @@ export const AdminDashboardPage: React.FC = () => {
               {tab === 'reports' && 'Driver Reports'}
               {tab === 'attendance' && 'Attendance'}
               {tab === 'maintenance' && 'Fleet Maintenance'}
+              {tab === 'analytics' && 'Analytics'}
               {tab === 'tracking' && 'Live Tracking'}
             </h1>
             <span className="chip">
@@ -908,9 +927,12 @@ export const AdminDashboardPage: React.FC = () => {
           {tab === 'reports' && renderReports()}
           {tab === 'attendance' && renderAttendance()}
           {tab === 'maintenance' && <FleetMaintenanceTab buses={buses} />}
+          {tab === 'analytics' && <AnalyticsTab buses={buses} students={students} />}
           {tab === 'tracking' && renderTracking()}
         </div>
       </div>
+
+      <ChatAssistant title="Admin Assistant" examplePrompt="Which bus needs service?" buildContext={buildChatContext} />
 
       {/* ── Bus modal ── */}
       {showBusModal && (
