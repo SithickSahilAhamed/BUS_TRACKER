@@ -30,7 +30,7 @@ initializeApp();
 const db = getFirestore();
 
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
-const MODEL_NAME = 'gemini-1.5-flash';
+const MODEL_NAME = 'gemini-flash-latest'; // confirmed working against the real API — currently resolves to gemini-3.5-flash
 const MAX_MESSAGE_LENGTH = 500;
 const MAX_CONTEXT_JSON_LENGTH = 4000;
 
