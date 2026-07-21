@@ -3,6 +3,12 @@
   =================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* Agni Operational System redesign (Stage 1) — utilities only, preflight is
+   off in tailwind.config.js so this doesn't reset the legacy styles below
+   that not-yet-migrated pages still depend on. See CLAUDE.md. */
+@tailwind utilities;
 
 /* ─── Reset & Root ─────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

@@ -7,13 +7,13 @@
  * doesn't pause it. Only End Trip / Logout stop it.
  */
 
-import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
-import { Navbar, Alert, Button, Select } from '../components/common';
-import { ChatAssistant } from '../components/ChatAssistant';
+import { Navbar, Button, Select, Textarea, MobileBottomNav, type BottomNavTab } from '../components/common';
+import { ChatAssistant, type ChatAssistantHandle } from '../components/ChatAssistant';
 import { SosButton } from '../components/SosButton';
-import { NotificationBell } from '../components/NotificationBell';
+import { NotificationBell, type NotificationBellHandle } from '../components/NotificationBell';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
 import {
@@ -27,16 +27,28 @@ import {
 import { getTrackingState, startTracking, stopTracking, subscribeTracking } from '../services/tracking';
 import { getNextStop } from '../utils/eta';
 import { DAMAGE_CATEGORIES, INCIDENT_CATEGORIES, type ReportType, type UserProfile } from '../types';
+import IconHome from '~icons/material-symbols/home-outline';
+import IconMyLocation from '~icons/material-symbols/my-location-outline';
+import IconBot from '~icons/material-symbols/smart-toy-outline';
+import IconBell from '~icons/material-symbols/notifications-outline';
+import IconPerson from '~icons/material-symbols/person-outline';
+import IconPlay from '~icons/material-symbols/play-circle';
+import IconStop from '~icons/material-symbols/stop-circle';
+import IconGroup from '~icons/material-symbols/group';
+import IconWheelchair from '~icons/material-symbols/wheelchair-pickup';
+import IconReport from '~icons/material-symbols/report';
+import IconCrash from '~icons/material-symbols/minor-crash';
+import IconSensors from '~icons/material-symbols/sensors';
 
 const isNativeApp = Capacitor.isNativePlatform();
-
-const WRITE_INTERVAL_SECONDS = 10;
 
 export const DriverPanelPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, profile, logout } = useAuth();
   const { buses, loading: busesLoading } = useBuses();
   const tracking = useSyncExternalStore(subscribeTracking, getTrackingState);
+  const chatRef = useRef<ChatAssistantHandle>(null);
+  const bellRef = useRef<NotificationBellHandle>(null);
 
   const [selectedBusId, setSelectedBusId] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -211,8 +223,6 @@ export const DriverPanelPage: React.FC = () => {
     }
   };
 
-  const wakeLockSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
-
   const buildChatContext = () => ({
     driverName: profile?.name,
     tripStatus: isTracking ? 'on trip, GPS broadcasting' : myBus ? 'has a claimed bus but not currently tracking' : 'not on a trip',
@@ -222,275 +232,238 @@ export const DriverPanelPage: React.FC = () => {
       : null,
   });
 
+  const bottomTabs: BottomNavTab[] = [
+    { key: 'home', icon: IconHome, label: 'Home', to: '/driver' },
+    { key: 'track', icon: IconMyLocation, label: 'Track', to: '/map' },
+    { key: 'ai', icon: IconBot, label: 'AI', onClick: () => chatRef.current?.open() },
+    { key: 'alerts', icon: IconBell, label: 'Alerts', onClick: () => bellRef.current?.open() },
+    { key: 'profile', icon: IconPerson, label: 'Profile', onClick: handleLogout },
+  ];
+
   return (
-    <div className="campus-shell">
+    <div className="min-h-screen bg-surface flex flex-col">
       <Navbar
         title="Driver Panel"
         subtitle={profile ? profile.name : 'Agni College of Technology'}
-        rightAction={
-          <>
-            <span className={`chip ${isTracking ? '' : 'offline'}`}>
-              <span className={`status-dot ${isTracking ? 'live' : 'offline'}`} />
-              {isTracking ? 'Broadcasting' : 'Idle'}
-            </span>
-            <NotificationBell />
-            <button className="btn btn-secondary btn-sm" onClick={() => navigate('/map')}>
-              View map
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
-              Logout
-            </button>
-          </>
-        }
+        rightAction={<NotificationBell ref={bellRef} />}
       />
 
-      <div className="campus-section" style={{ maxWidth: 960 }}>
-        {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
-        {success && <Alert type="success" message={success} onClose={() => setSuccess(null)} />}
-
-        <div className="two-col">
-          {/* ── Trip control ── */}
-          <div className="panel">
-            <div className="panel-title">Trip Control</div>
-
-            {/* Active claim from a previous session (a real page reload — in-app
-                navigation no longer loses the tracking state) */}
-            {myBus && !isTracking && (
-              <div className="alert alert-warning">
-                <span>
-                  You still have an active trip on <strong>{myBus.busId}</strong>.
-                </span>
-                <span style={{ display: 'flex', gap: '.5rem' }}>
-                  <Button size="sm" onClick={handleResumeTracking}>Resume</Button>
-                  <Button size="sm" variant="danger" onClick={handleEndTrip}>End trip</Button>
-                </span>
-              </div>
-            )}
-
-            {!isTracking && !myBus && (
-              <>
-                <div className="form-group">
-                  <label className="form-label">Which bus are you driving?</label>
-                  <select
-                    className="form-control"
-                    value={selectedBusId}
-                    onChange={(e) => setSelectedBusId(e.target.value)}
-                    disabled={busesLoading}
-                  >
-                    <option value="">
-                      {busesLoading ? 'Loading buses…' : 'Select your bus…'}
-                    </option>
-                    {buses.map((bus) => (
-                      <option key={bus.busId} value={bus.busId} disabled={claimedElsewhere(bus.busId)}>
-                        {bus.busId} · {bus.busName}
-                        {claimedElsewhere(bus.busId) ? ` (in use by ${bus.activeDriverName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {gpsAvailable === false && (
-                  <div className="alert alert-warning">
-                    <span>
-                      GPS not available on this device. Turn on location services in your phone
-                      settings, then reload this page.
-                    </span>
-                  </div>
-                )}
-
-                <Button
-                  fullWidth
-                  size="lg"
-                  isLoading={isBusy}
-                  disabled={!selectedBusId || isBusy}
-                  onClick={handleStartTrip}
-                >
-                  ▶ Start Trip
-                </Button>
-              </>
-            )}
-
-            {isTracking && (
-              <>
-                <div className="status-grid" style={{ marginBottom: '1rem' }}>
-                  <div className="status-card">
-                    <div className="status-label">Bus</div>
-                    <div className="status-value">{tracking.busId}</div>
-                  </div>
-                  <div className="status-card">
-                    <div className="status-label">Updates sent</div>
-                    <div className="status-value">{tracking.writeCount}</div>
-                  </div>
-                  <div className="status-card">
-                    <div className="status-label">Last fix</div>
-                    <div className="status-value">{tracking.lastFix ?? 'waiting…'}</div>
-                  </div>
-                </div>
-
-                <Button fullWidth size="lg" variant="danger" isLoading={isBusy} onClick={handleEndTrip}>
-                  ■ End Trip
-                </Button>
-
-                {isNativeApp ? (
-                  <div className="alert alert-success" style={{ marginTop: '.75rem' }}>
-                    <span>
-                      ✓ Background tracking is active — you can lock your phone or switch apps and
-                      your location will keep sending until you press End Trip.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="alert alert-warning" style={{ marginTop: '.75rem' }}>
-                    <span>
-                      {wakeLockSupported
-                        ? '⚠ Keep this tab open and in the foreground while driving. Your screen will stay on, but switching to another app still pauses GPS updates on most phones.'
-                        : "⚠ Keep this screen on and this tab open while driving — this browser can't prevent the phone from sleeping automatically, which pauses GPS updates."}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-
-            <div style={{ marginTop: '1.25rem' }} className="status-card">
-              <div className="status-label">How to use</div>
-              <ol style={{ paddingLeft: '1.1rem', margin: '.5rem 0 0', fontSize: '.85rem', color: 'var(--text-muted)', display: 'grid', gap: 4 }}>
-                <li>Select the bus number you're driving today</li>
-                <li>Press <strong>Start Trip</strong> and allow location access</li>
-                <li>
-                  {isNativeApp
-                    ? 'You can lock your phone or switch apps — tracking keeps running until you end the trip'
-                    : "Keep this page open and your screen on for the whole trip — the app doesn't send your location while it's in the background"}
-                </li>
-                <li>Press <strong>End Trip</strong> when you arrive</li>
-              </ol>
-            </div>
+      <main className="flex-1 flex flex-col gap-md p-gutter pb-32 max-w-lg mx-auto w-full">
+        {error && (
+          <div className="p-sm rounded-lg bg-error-container text-on-error-container text-body-md flex items-center justify-between gap-sm">
+            {error}
+            <button className="font-bold shrink-0" onClick={() => setError(null)}>✕</button>
           </div>
+        )}
+        {success && (
+          <div className="p-sm rounded-lg bg-green-100 text-green-800 text-body-md flex items-center justify-between gap-sm">
+            {success}
+            <button className="font-bold shrink-0" onClick={() => setSuccess(null)}>✕</button>
+          </div>
+        )}
 
-          {/* ── Telemetry ── */}
-          <div className="panel">
-            <div className="panel-title">Live Telemetry</div>
-            <div className="gps-grid">
-              <div className="gps-item">
-                <div className="gps-label">Latitude</div>
-                <div className="gps-value">{tracking.current ? tracking.current.lat.toFixed(6) : '—'}</div>
+        {/* GPS streaming status ribbon */}
+        <section className="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between">
+          <div className="flex items-center gap-sm">
+            <span className={`w-2.5 h-2.5 rounded-full ${isTracking ? 'bg-secondary animate-pulse' : 'bg-gray-400'}`} />
+            <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+              {isTracking ? 'GPS Streaming Active' : 'GPS Idle'}
+            </span>
+          </div>
+          <span className="font-mono-data text-mono-data text-primary">
+            {isTracking ? `${tracking.busId} · ${tracking.writeCount} updates sent` : 'Not on a trip'}
+          </span>
+        </section>
+
+        {/* Active claim from a previous session (in-app navigation no longer loses tracking state) */}
+        {myBus && !isTracking && (
+          <div className="p-md rounded-xl bg-tertiary-fixed text-on-tertiary-fixed-variant flex items-center justify-between gap-sm">
+            <span>You still have an active trip on <strong>{myBus.busId}</strong>.</span>
+            <span className="flex gap-sm shrink-0">
+              <Button size="sm" onClick={handleResumeTracking}>Resume</Button>
+              <Button size="sm" variant="danger" onClick={handleEndTrip}>End trip</Button>
+            </span>
+          </div>
+        )}
+
+        {!isTracking && !myBus && (
+          <section className="flex flex-col gap-md">
+            <Select
+              label="Which bus are you driving?"
+              value={selectedBusId}
+              onChange={(e) => setSelectedBusId(e.target.value)}
+              disabled={busesLoading}
+              options={buses.map((bus) => ({
+                value: bus.busId,
+                label: `${bus.busId} · ${bus.busName}${claimedElsewhere(bus.busId) ? ` (in use by ${bus.activeDriverName})` : ''}`,
+              }))}
+            />
+            {gpsAvailable === false && (
+              <div className="p-sm rounded-lg bg-tertiary-fixed text-on-tertiary-fixed-variant text-body-md">
+                GPS not available on this device. Turn on location services in your phone settings, then reload this page.
               </div>
-              <div className="gps-item">
-                <div className="gps-label">Longitude</div>
-                <div className="gps-value">{tracking.current ? tracking.current.lng.toFixed(6) : '—'}</div>
+            )}
+            <button
+              className="relative w-full h-40 bg-primary rounded-2xl flex flex-col items-center justify-center gap-xs text-on-primary transition-all active:scale-[0.98] disabled:opacity-50"
+              disabled={!selectedBusId || isBusy}
+              onClick={handleStartTrip}
+            >
+              <IconPlay className="w-14 h-14" />
+              <span className="font-headline-lg-mobile text-headline-lg-mobile font-black tracking-tight">
+                {isBusy ? 'Starting…' : 'Start Trip'}
+              </span>
+              {selectedBusId && <span className="font-label-md text-label-md opacity-70">Tap to claim {selectedBusId}</span>}
+            </button>
+          </section>
+        )}
+
+        {isTracking && (
+          <section className="flex flex-col gap-md">
+            <button
+              className="w-full h-40 bg-error rounded-2xl flex flex-col items-center justify-center gap-xs text-on-error transition-all active:scale-[0.98] disabled:opacity-50"
+              disabled={isBusy}
+              onClick={handleEndTrip}
+            >
+              <IconStop className="w-14 h-14" />
+              <span className="font-headline-lg-mobile text-headline-lg-mobile font-black tracking-tight">
+                {isBusy ? 'Ending…' : 'End Trip'}
+              </span>
+            </button>
+
+            <div className="grid grid-cols-3 gap-sm">
+              <div className="bg-surface-container-low rounded-lg p-sm text-center">
+                <div className="text-label-md text-on-surface-variant">Latitude</div>
+                <div className="font-mono-data text-mono-data text-on-surface">{tracking.current ? tracking.current.lat.toFixed(4) : '—'}</div>
               </div>
-              <div className="gps-item">
-                <div className="gps-label">Speed</div>
-                <div className="gps-value">{tracking.speed != null ? `${tracking.speed.toFixed(0)} km/h` : '—'}</div>
+              <div className="bg-surface-container-low rounded-lg p-sm text-center">
+                <div className="text-label-md text-on-surface-variant">Longitude</div>
+                <div className="font-mono-data text-mono-data text-on-surface">{tracking.current ? tracking.current.lng.toFixed(4) : '—'}</div>
               </div>
-              <div className="gps-item">
-                <div className="gps-label">Accuracy</div>
-                <div className="gps-value">{tracking.accuracy != null ? `±${tracking.accuracy.toFixed(0)} m` : '—'}</div>
+              <div className="bg-surface-container-low rounded-lg p-sm text-center">
+                <div className="text-label-md text-on-surface-variant">Speed</div>
+                <div className="font-mono-data text-mono-data text-on-surface">{tracking.speed != null ? `${tracking.speed.toFixed(0)} km/h` : '—'}</div>
               </div>
             </div>
 
-            {isTracking && tracking.error && (
-              <div className="alert alert-error">
-                <span>⚠ {tracking.error}</span>
-              </div>
+            {tracking.error && (
+              <div className="p-sm rounded-lg bg-error-container text-on-error-container text-body-md">⚠ {tracking.error}</div>
             )}
-            {isTracking && !tracking.error && !tracking.current && (
-              <div className="alert alert-warning">
-                <span>⚠ Waiting for a GPS fix… make sure location is enabled.</span>
-              </div>
+            {!tracking.error && !tracking.current && (
+              <div className="p-sm rounded-lg bg-tertiary-fixed text-on-tertiary-fixed-variant text-body-md">⚠ Waiting for a GPS fix…</div>
             )}
 
-            <p style={{ fontSize: '.82rem', color: 'var(--text-muted)', marginTop: '.75rem' }}>
-              Your position is sent every ~{WRITE_INTERVAL_SECONDS} seconds while the bus is
-              moving. Students, professors and the admin see it instantly.
+            {isNativeApp ? (
+              <div className="p-sm rounded-lg bg-green-100 text-green-800 text-body-md flex items-center gap-xs">
+                <IconSensors className="w-4 h-4 shrink-0" /> Background tracking is active — you can lock your phone or switch apps and your location will keep sending until you press End Trip.
+              </div>
+            ) : (
+              <div className="p-sm rounded-lg bg-tertiary-fixed text-on-tertiary-fixed-variant text-body-md">
+                ⚠ Keep this tab open and in the foreground while driving — switching to another app pauses GPS updates on most phones.
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Next Stop / roster */}
+        {myBus && (
+          <div className="bg-surface-container-low rounded-xl p-lg border border-outline-variant flex flex-col gap-sm">
+            <div className="flex justify-between items-start">
+              <span className="font-label-md text-label-md text-on-surface-variant uppercase">
+                {nextStop ? `Next Stop: ${nextStop.name}` : 'No more stops ahead'}
+              </span>
+              <IconGroup className="w-5 h-5 text-primary" />
+            </div>
+            {nextStop && (
+              <>
+                <div className="flex items-baseline gap-xs">
+                  <span className="font-display-lg text-display-lg text-primary">{boardedCount}/{stopRiders.length}</span>
+                  <span className="font-title-lg text-title-lg text-on-surface-variant">Boarded</span>
+                </div>
+                {stopRiders.length === 0 ? (
+                  <p className="text-body-md text-on-surface-variant">No students are assigned to this stop.</p>
+                ) : (
+                  <div className="flex flex-col gap-xs mt-xs">
+                    {stopRiders.map((s) => {
+                      const boarded = !!myBus.boardedStudentIds?.includes(s.uid);
+                      return (
+                        <label
+                          key={s.uid}
+                          className="flex items-center gap-sm px-sm py-xs rounded-lg bg-surface-container-lowest border border-outline-variant text-body-md"
+                          style={{ cursor: boardingBusy ? 'wait' : 'pointer' }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={boarded}
+                            disabled={boardingBusy === s.uid}
+                            onChange={(e) => handleToggleBoarded(s.uid, e.target.checked)}
+                          />
+                          <span className={`flex-1 ${boarded ? 'line-through opacity-60' : ''}`}>{s.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="mt-xs pt-xs border-t border-outline-variant flex gap-md">
+                  <div className="flex items-center gap-xs text-label-md">
+                    <IconWheelchair className="w-4 h-4" /> Accessible boarding available
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Reporting actions */}
+        <div className="grid grid-cols-2 gap-md">
+          <button
+            className="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col items-center justify-center gap-xs hover:bg-surface-container-high transition-colors active:scale-95"
+            onClick={() => openReportModal('incident')}
+          >
+            <IconReport className="w-6 h-6 text-error" />
+            <span className="font-label-md text-label-md font-semibold">Incident</span>
+          </button>
+          <button
+            className="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col items-center justify-center gap-xs hover:bg-surface-container-high transition-colors active:scale-95"
+            onClick={() => openReportModal('damage')}
+          >
+            <IconCrash className="w-6 h-6 text-on-surface-variant" />
+            <span className="font-label-md text-label-md font-semibold">Damage</span>
+          </button>
+        </div>
+
+        {/* AI assistant entry point */}
+        <button
+          onClick={() => chatRef.current?.open()}
+          className="bg-primary-container text-on-primary-container rounded-xl p-lg flex gap-md items-start text-left relative overflow-hidden"
+        >
+          <div className="p-xs bg-primary rounded-full shrink-0">
+            <IconBot className="w-5 h-5 text-on-primary" />
+          </div>
+          <div className="flex flex-col gap-xs">
+            <span className="font-label-md text-label-md font-bold uppercase tracking-widest opacity-80">Driver Assistant</span>
+            <p className="font-body-md text-body-md leading-relaxed">
+              Ask about your next stop, how many students are waiting, or your trip status.
             </p>
           </div>
+        </button>
+      </main>
 
-          {/* ── Next stop + boarding ── */}
-          {myBus && (
-            <div className="panel">
-              <div className="panel-title">Next Stop</div>
-              {!nextStop ? (
-                <p style={{ color: 'var(--text-muted)' }}>
-                  {myBus.stops?.length
-                    ? 'End of the route — no more stops ahead.'
-                    : 'This bus has no saved stops yet.'}
-                </p>
-              ) : (
-                <>
-                  <div className="status-grid" style={{ marginBottom: '1rem' }}>
-                    <div className="status-card">
-                      <div className="status-label">Stop</div>
-                      <div className="status-value">{nextStop.name}</div>
-                    </div>
-                    <div className="status-card">
-                      <div className="status-label">Boarded</div>
-                      <div className="status-value">{boardedCount} / {stopRiders.length}</div>
-                    </div>
-                  </div>
-
-                  {stopRiders.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '.85rem' }}>
-                      No students are assigned to this stop.
-                    </p>
-                  ) : (
-                    <div style={{ display: 'grid', gap: '.4rem' }}>
-                      {stopRiders.map((s) => {
-                        const boarded = !!myBus.boardedStudentIds?.includes(s.uid);
-                        return (
-                          <label
-                            key={s.uid}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '.6rem',
-                              padding: '.5rem .65rem', borderRadius: 'var(--radius)',
-                              background: 'var(--surface-2)', border: '1px solid var(--border)',
-                              fontSize: '.88rem', cursor: boardingBusy ? 'wait' : 'pointer',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={boarded}
-                              disabled={boardingBusy === s.uid}
-                              onChange={(e) => handleToggleBoarded(s.uid, e.target.checked)}
-                            />
-                            <span style={{ flex: 1, textDecoration: boarded ? 'line-through' : 'none', opacity: boarded ? 0.6 : 1 }}>
-                              {s.name}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Report an issue ── */}
-        <div className="panel" style={{ marginTop: '1.5rem' }}>
-          <div className="panel-title">Report an Issue</div>
-          {!reportBusId ? (
-            <p style={{ color: 'var(--text-muted)' }}>Select your bus above first.</p>
-          ) : (
-            <div style={{ display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
-              <Button variant="secondary" onClick={() => openReportModal('incident')}>
-                🚧 Report Incident
-              </Button>
-              <Button variant="secondary" onClick={() => openReportModal('damage')}>
-                🔧 Report Damage
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <ChatAssistant title="Driver Assistant" examplePrompt="Which stop has the most students waiting?" buildContext={buildChatContext} />
-      {profile && <SosButton userId={profile.uid} userName={profile.name} role="driver" busId={myBus?.busId ?? null} />}
+      <MobileBottomNav tabs={bottomTabs} />
+      <SosButton
+        userId={profile?.uid ?? ''}
+        userName={profile?.name ?? ''}
+        role="driver"
+        busId={myBus?.busId ?? null}
+      />
+      <ChatAssistant ref={chatRef} hideTrigger title="Driver Assistant" examplePrompt="Which stop has the most students waiting?" buildContext={buildChatContext} />
 
       {/* ── Report modal ── */}
       {reportType && (
-        <div className="modal-backdrop" onClick={() => !reportSaving && setReportType(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h2 className="panel-title">{reportType === 'incident' ? 'Report Incident' : 'Report Damage'}</h2>
+        <div className="fixed inset-0 z-[200] bg-black/40 flex items-end sm:items-center justify-center" onClick={() => !reportSaving && setReportType(null)}>
+          <div className="bg-surface-container-lowest rounded-t-2xl sm:rounded-xl w-full sm:max-w-md p-lg" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-title-lg text-title-lg text-on-surface mb-md">
+              {reportType === 'incident' ? 'Report Incident' : 'Report Damage'}
+            </h2>
             <form onSubmit={handleSubmitReport}>
               <Select
                 label="Category"
@@ -499,17 +472,14 @@ export const DriverPanelPage: React.FC = () => {
                 options={(reportType === 'incident' ? INCIDENT_CATEGORIES : DAMAGE_CATEGORIES).map((c) => ({ value: c, label: c }))}
                 required
               />
-              <div className="form-group">
-                <label className="form-label">Details (optional)</label>
-                <textarea
-                  className="form-control"
-                  rows={3}
-                  placeholder="Anything else the admin should know…"
-                  value={reportForm.description}
-                  onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+              <Textarea
+                label="Details (optional)"
+                rows={3}
+                placeholder="Anything else the admin should know…"
+                value={reportForm.description}
+                onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })}
+              />
+              <div className="flex gap-sm justify-end">
                 <Button type="button" variant="secondary" onClick={() => setReportType(null)} disabled={reportSaving}>
                   Cancel
                 </Button>

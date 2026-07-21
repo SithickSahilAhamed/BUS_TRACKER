@@ -16,18 +16,18 @@ export const isFresh = (bus: Bus): boolean => {
 /** Colored circle + bus emoji + number label. divIcon avoids the classic
  *  broken default-icon problem Leaflet has under bundlers like Vite. */
 const busIcon = (bus: Bus, selected: boolean) => {
-  const color = !bus.isActive ? '#8a94a0' : isFresh(bus) ? '#1b7a5a' : '#d18b2b';
-  const ring = selected ? 'box-shadow: 0 0 0 4px rgba(15,93,143,.35);' : '';
+  const color = !bus.isActive ? '#9ca3af' : isFresh(bus) ? '#16a34a' : '#f59e0b';
+  const ring = selected ? 'box-shadow: 0 0 0 4px rgba(0,49,98,.35);' : '';
   return L.divIcon({
     className: 'bus-div-icon',
     html: `
       <div style="display:flex;flex-direction:column;align-items:center;">
         <div style="width:36px;height:36px;border-radius:50%;background:${color};${ring}
                     display:flex;align-items:center;justify-content:center;font-size:18px;
-                    border:2.5px solid #fff;box-shadow:0 2px 8px rgba(15,29,46,.35);">🚌</div>
-        <div style="margin-top:2px;background:#fffdfa;border:1px solid #d9d2c7;border-radius:8px;
-                    padding:0 6px;font:600 10px 'Source Sans 3',sans-serif;color:#0f1d2e;
-                    white-space:nowrap;box-shadow:0 1px 3px rgba(15,29,46,.2);">${bus.busNumber}</div>
+                    border:2.5px solid #fff;box-shadow:0 2px 8px rgba(25,28,32,.35);">🚌</div>
+        <div style="margin-top:2px;background:#ffffff;border:1px solid #c2c6d2;border-radius:8px;
+                    padding:0 6px;font:600 10px 'Inter',sans-serif;color:#191c20;
+                    white-space:nowrap;box-shadow:0 1px 3px rgba(25,28,32,.2);">${bus.busNumber}</div>
       </div>`,
     iconSize: [36, 50],
     iconAnchor: [18, 18],
@@ -37,7 +37,7 @@ const busIcon = (bus: Bus, selected: boolean) => {
 
 const stopIcon = L.divIcon({
   className: 'bus-stop-icon',
-  html: `<div style="width:12px;height:12px;border-radius:50%;background:#0f5d8f;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);"></div>`,
+  html: `<div style="width:12px;height:12px;border-radius:50%;background:#003162;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);"></div>`,
   iconSize: [12, 12],
   iconAnchor: [6, 6],
 });
@@ -100,7 +100,7 @@ export const BusMap: React.FC<BusMapProps> = ({
       {selectedBus?.routePath && selectedBus.routePath.length > 1 && (
         <Polyline
           positions={selectedBus.routePath.map((p) => [p.lat, p.lng] as [number, number])}
-          pathOptions={{ color: '#0f5d8f', weight: 5, opacity: 0.75 }}
+          pathOptions={{ color: '#003162', weight: 5, opacity: 0.75 }}
         />
       )}
       {selectedBus?.stops?.map((stop, i) => (
@@ -120,11 +120,11 @@ export const BusMap: React.FC<BusMapProps> = ({
             eventHandlers={{ click: () => onSelectBus?.(bus.busId) }}
           >
             <Popup>
-              <div style={{ minWidth: 170, fontFamily: "'Source Sans 3', sans-serif" }}>
+              <div style={{ minWidth: 170, fontFamily: "'Inter', sans-serif" }}>
                 <strong>
                   {bus.busNumber} · {bus.busName}
                 </strong>
-                <div style={{ fontSize: 12, color: '#4b5a6b', marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: '#424750', marginTop: 4 }}>
                   <div>Route: {bus.routeName || '—'}</div>
                   <div>Driver: {bus.activeDriverName ?? 'not on trip'}</div>
                   <div>
@@ -148,7 +148,7 @@ export const BusMap: React.FC<BusMapProps> = ({
             key={bus.busId}
             center={[bus.stops![0].lat, bus.stops![0].lng]}
             radius={8}
-            pathOptions={{ color: '#8a94a0', fillColor: '#8a94a0', fillOpacity: 0.5 }}
+            pathOptions={{ color: '#9ca3af', fillColor: '#9ca3af', fillOpacity: 0.5 }}
             eventHandlers={{ click: () => onSelectBus?.(bus.busId) }}
           >
             <Popup>

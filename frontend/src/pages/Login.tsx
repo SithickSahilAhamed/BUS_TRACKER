@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Input, Button } from '../components/common';
 import type { UserRole } from '../types';
 
 export type LoginVariant = 'general' | 'driver' | 'admin' | 'maintenance' | 'parent' | 'principal';
@@ -14,7 +15,10 @@ const homeForRole = (role: UserRole): string => {
   return '/map';
 };
 
-// Per-door branding and wrong-door handling
+// Per-door branding and wrong-door handling. These accent colors are
+// deliberate per-role identity, kept distinct from the Agni design system's
+// primary/secondary tokens on purpose — no reference screen covers this
+// page, so role recognition at a glance takes priority here.
 const VARIANTS: Record<
   LoginVariant,
   { icon: string; title: string; subtitle: string; accent: string; expect?: UserRole; showSignup: boolean }
@@ -130,97 +134,93 @@ const LoginPage: React.FC<LoginPageProps> = ({ variant = 'general' }) => {
   const missingProfile = !loading && user && !profile;
 
   return (
-    <div className="login-wrapper">
-      <div className="login-card" style={{ borderTop: `4px solid ${cfg.accent}` }}>
-        <h1 className="login-title">
-          <span style={{ marginRight: 8 }}>{cfg.icon}</span>
+    <div className="min-h-screen flex items-center justify-center bg-surface-container-low px-md py-2xl">
+      <div className="w-full max-w-sm bg-surface-container-lowest rounded-xl border border-outline-variant p-xl" style={{ borderTop: `4px solid ${cfg.accent}` }}>
+        <h1 className="font-headline-md text-headline-md text-on-surface flex items-center gap-sm mb-xs">
+          <span>{cfg.icon}</span>
           {cfg.title}
         </h1>
-        <p className="login-subtitle">{cfg.subtitle}</p>
+        <p className="font-body-md text-body-md text-on-surface-variant mb-lg">{cfg.subtitle}</p>
 
-        {error && <div className="login-error">{error}</div>}
+        {error && (
+          <div className="mb-md p-sm rounded-lg bg-error-container text-on-error-container text-body-md">
+            {error}
+          </div>
+        )}
         {missingProfile && (
-          <div className="login-error">
-            Your account exists but has no profile yet. Ask the admin to finish setting it up.
-            <button
-              className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, color: '#ff8a80' }}
-              onClick={() => logout()}
-            >
+          <div className="mb-md p-sm rounded-lg bg-error-container text-on-error-container text-body-md flex items-center justify-between gap-sm">
+            <span>Your account exists but has no profile yet. Ask the admin to finish setting it up.</span>
+            <button className="font-label-md text-label-md font-bold underline shrink-0" onClick={() => logout()}>
               Sign out
             </button>
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input
-              type="email"
-              className="form-control"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input
-              type="password"
-              className="form-control"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <button
+          <Input
+            label="Email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoFocus
+          />
+          <Input
+            label="Password"
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button
             type="submit"
-            className="btn btn-block btn-lg"
-            style={{ background: cfg.accent, color: variant === 'admin' ? '#0f1d2e' : '#fff' }}
+            fullWidth
+            size="lg"
+            className="mt-sm"
+            style={{ background: cfg.accent, borderColor: cfg.accent, color: variant === 'admin' ? '#0f1d2e' : '#fff' }}
             disabled={submitting || (!loading && !!profile)}
           >
             {submitting ? 'Signing in…' : 'Sign In'}
-          </button>
+          </Button>
         </form>
 
         {cfg.showSignup && (
-          <p style={{ textAlign: 'center', marginTop: '1.5rem', color: 'rgba(255,255,255,.6)', fontSize: '.9rem' }}>
+          <p className="text-center mt-lg text-body-md text-on-surface-variant">
             New student or professor?{' '}
-            <Link to="/signup" style={{ color: '#8ecdf7', fontWeight: 600 }}>
+            <Link to="/signup" className="font-bold text-secondary no-underline">
               Create an account
             </Link>
           </p>
         )}
 
         {/* Cross-links to the other doors */}
-        <div style={{ textAlign: 'center', marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <div className="flex flex-wrap gap-md justify-center mt-md">
           {variant !== 'general' && (
-            <Link to="/login" style={{ color: 'rgba(255,255,255,.5)', fontSize: '.82rem' }}>
+            <Link to="/login" className="text-label-md text-on-surface-variant hover:text-primary no-underline">
               Student / Staff login
             </Link>
           )}
           {variant !== 'driver' && (
-            <Link to="/driver/login" style={{ color: 'rgba(255,255,255,.5)', fontSize: '.82rem' }}>
+            <Link to="/driver/login" className="text-label-md text-on-surface-variant hover:text-primary no-underline">
               Driver login
             </Link>
           )}
           {variant !== 'admin' && (
-            <Link to="/admin/login" style={{ color: 'rgba(255,255,255,.5)', fontSize: '.82rem' }}>
+            <Link to="/admin/login" className="text-label-md text-on-surface-variant hover:text-primary no-underline">
               Admin login
             </Link>
           )}
           {variant !== 'maintenance' && (
-            <Link to="/maintenance/login" style={{ color: 'rgba(255,255,255,.5)', fontSize: '.82rem' }}>
+            <Link to="/maintenance/login" className="text-label-md text-on-surface-variant hover:text-primary no-underline">
               Maintenance login
             </Link>
           )}
         </div>
 
-        <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-          <Link to="/" style={{ color: 'rgba(255,255,255,.45)', fontSize: '.85rem' }}>
+        <p className="text-center mt-md">
+          <Link to="/" className="text-label-md text-on-surface-variant hover:text-primary no-underline">
             ← Back to home
           </Link>
         </p>

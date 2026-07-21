@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AGNI Smart Fleet AI | Intelligent Operations</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface": "#f9f9ff",
+                    "on-error-container": "#93000a",
+                    "on-surface-variant": "#424750",
+                    "tertiary": "#542200",
+                    "surface-container-highest": "#e2e2e8",
+                    "on-secondary-container": "#004286",
+                    "on-primary": "#ffffff",
+                    "tertiary-container": "#773300",
+                    "surface-bright": "#f9f9ff",
+                    "inverse-primary": "#a7c8ff",
+                    "on-secondary-fixed": "#001b3d",
+                    "on-primary-container": "#8ab7ff",
+                    "background": "#f9f9ff",
+                    "on-tertiary-fixed-variant": "#773300",
+                    "on-tertiary": "#ffffff",
+                    "on-surface": "#191c20",
+                    "inverse-surface": "#2e3035",
+                    "surface-dim": "#d9d9e0",
+                    "primary": "#003162",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-low": "#f3f3f9",
+                    "surface-container-high": "#e7e8ee",
+                    "surface-tint": "#2c5fa1",
+                    "on-tertiary-fixed": "#331200",
+                    "on-primary-fixed-variant": "#044788",
+                    "secondary": "#2b5ea5",
+                    "outline": "#737781",
+                    "secondary-fixed": "#d6e3ff",
+                    "on-error": "#ffffff",
+                    "secondary-fixed-dim": "#a9c7ff",
+                    "secondary-container": "#84b1fe",
+                    "on-background": "#191c20",
+                    "on-secondary": "#ffffff",
+                    "inverse-on-surface": "#f0f0f6",
+                    "error": "#ba1a1a",
+                    "surface-variant": "#e2e2e8",
+                    "primary-fixed-dim": "#a7c8ff",
+                    "primary-fixed": "#d5e3ff",
+                    "tertiary-fixed": "#ffdbca",
+                    "tertiary-fixed-dim": "#ffb68e",
+                    "primary-container": "#054788",
+                    "error-container": "#ffdad6",
+                    "surface-container": "#ededf4",
+                    "on-tertiary-container": "#ff9d65",
+                    "on-secondary-fixed-variant": "#00468c",
+                    "on-primary-fixed": "#001b3c",
+                    "outline-variant": "#c2c6d2",
+                    "accent-cta": "#F7D03D"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "lg": "24px",
+                    "xs": "4px",
+                    "unit": "4px",
+                    "3xl": "64px",
+                    "md": "16px",
+                    "gutter": "24px",
+                    "2xl": "48px",
+                    "container-max": "1440px",
+                    "xl": "32px",
+                    "sm": "8px"
+            },
+            "fontFamily": {
+                    "body-lg": ["Inter"],
+                    "body-md": ["Inter"],
+                    "title-lg": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "mono-data": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "display-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "title-lg": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "mono-data": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #F5F9FD; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .swiss-grid { background-size: 40px 40px; background-image: radial-gradient(circle, #00316210 1px, transparent 1px); }
+        .bento-card { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .bento-card:hover { transform: translateY(-4px); }
+    </style>
+</head>
+<body class="text-on-surface overflow-x-hidden">
+<!-- TopNavBar -->
+<header class="bg-surface docked full-width top-0 z-40 border-b border-outline-variant flex justify-between items-center w-full px-gutter h-16 sticky">
+<div class="flex items-center gap-xl">
+<span class="font-headline-md text-headline-md font-bold text-primary">AGNI Smart Fleet AI</span>
+<nav class="hidden md:flex gap-lg">
+<a class="font-label-md text-label-md text-primary font-semibold hover:bg-surface-container-high transition-colors px-sm py-xs rounded" href="#">Home</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors px-sm py-xs rounded" href="#">Solutions</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors px-sm py-xs rounded" href="#">Safety</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors px-sm py-xs rounded" href="#">Network</a>
+</nav>
+</div>
+<div class="flex items-center gap-md">
+<button class="hidden md:flex items-center gap-xs px-md py-sm rounded border border-outline hover:bg-surface-container-high transition-colors text-primary font-semibold text-label-md">
+<span class="material-symbols-outlined">account_circle</span>
+                Log In
+            </button>
+<button class="bg-accent-cta text-on-tertiary-fixed font-bold text-label-md px-md py-sm rounded shadow-sm hover:opacity-90 active:scale-95 transition-all">
+                Get Started
+            </button>
+<div class="md:hidden flex items-center">
+<span class="material-symbols-outlined text-primary cursor-pointer">notifications</span>
+</div>
+</div>
+</header>
+<main class="relative">
+<!-- Hero Section -->
+<section class="relative min-h-[870px] flex items-center pt-32 pb-2xl px-gutter swiss-grid">
+<div class="max-w-container-max mx-auto grid grid-cols-1 lg:grid-cols-12 gap-xl items-center">
+<div class="lg:col-span-7 space-y-xl">
+<div class="inline-flex items-center gap-xs px-md py-xs rounded-full bg-primary-fixed text-on-primary-fixed font-label-md border border-primary-container">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">psychology</span>
+                        Next-Gen Logistics Intelligence
+                    </div>
+<h1 class="font-display-lg text-display-lg text-primary tracking-tight leading-none">
+                        Intelligent Fleet Operations for the <span class="text-secondary underline decoration-4 underline-offset-8">Modern Campus.</span>
+</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl">
+                        Optimize logistics with precision. AGNI leverages real-time AI to coordinate campus movement, ensuring safety, efficiency, and zero-latency communication for every vehicle and passenger.
+                    </p>
+<div class="flex flex-wrap gap-md pt-md">
+<button class="bg-primary px-xl py-md rounded text-on-primary font-bold text-title-lg flex items-center gap-sm shadow-lg active:scale-95 transition-transform">
+                            Log In
+                            <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<button class="bg-accent-cta px-xl py-md rounded text-on-tertiary-fixed font-bold text-title-lg shadow-sm border border-tertiary-container hover:bg-opacity-90 active:scale-95 transition-transform">
+                            Get Started
+                        </button>
+</div>
+</div>
+<div class="lg:col-span-5 relative">
+<div class="relative w-full aspect-square rounded-2xl overflow-hidden border border-outline-variant bg-surface-container-lowest shadow-xl">
+<img class="w-full h-full object-cover" data-alt="A hyper-realistic 3D render of a futuristic campus fleet management dashboard displaying a holographic 3D map with glowing blue and gold data points. The lighting is crisp and cool, consistent with a professional Swiss minimalist aesthetic. A sleek electric shuttle is visible in the background, symbolizing high-tech logistics. The overall mood is precise, efficient, and technologically advanced." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBR4waisu9T34uq6slTL5sxq4h8IaKREVc8jKOlIiijozjHtU1zmn08xXkClqElS8qdRlW-aH6BmaxLCBGNHhfxhi_76YrQ9tyVvAyuWhtNbpJYk3Dxhxt4c1zzHe8Onf19pIlkcng-a9raykMpL0nGxvPoBWIKAnReE3q8EbmFvY8CHEpMGJYBAtwCsjS43bbbDMbOJZ81vyaFlc0wX75ctY7ziQx0MarQTfAdn0pl4PPuEAGmKUZj5JH0Q_mYmTfR4QIyEfcSSBks"/>
+<div class="absolute bottom-md left-md right-md bg-surface/90 backdrop-blur-md p-md rounded-xl border border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<div class="w-sm h-sm rounded-full bg-green-500 animate-pulse"></div>
+<span class="font-mono-data text-mono-data text-primary">Fleet AI: Optimal</span>
+</div>
+<span class="font-mono-data text-mono-data text-on-surface-variant">Active Sync: 100%</span>
+</div>
+</div>
+<!-- Abstract Background Element -->
+<div class="absolute -z-10 -top-xl -right-xl w-64 h-64 bg-secondary/10 rounded-full blur-3xl"></div>
+</div>
+</div>
+</section>
+<!-- Bento Grid Features: Students, Drivers, Admins -->
+<section class="py-3xl px-gutter bg-surface-container-low">
+<div class="max-w-container-max mx-auto">
+<div class="mb-2xl text-center max-w-2xl mx-auto">
+<h2 class="font-headline-lg text-headline-lg text-primary mb-md">Universal Connectivity</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">A unified platform built for the diverse needs of the modern educational ecosystem.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-lg">
+<!-- Students Card -->
+<div class="md:col-span-7 lg:col-span-8 bento-card bg-surface border border-outline-variant rounded-2xl p-xl flex flex-col justify-between min-h-[400px] overflow-hidden group">
+<div>
+<div class="flex items-center gap-sm mb-lg">
+<span class="material-symbols-outlined text-primary text-[32px]">school</span>
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest">For Students</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-sm">Predictive Transit Tracking</h3>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-md">Never miss a ride. Our AI calculates arrival times based on traffic, rider density, and weather conditions in real-time.</p>
+</div>
+<div class="mt-xl relative h-48 rounded-xl overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A clean, minimalist UI interface for a mobile app showing a real-time shuttle tracking map on a university campus. The map uses a light color palette with soft blue paths and a prominent gold vehicle icon. The typography is bold Inter. The overall feel is that of a premium, high-efficiency utility tool designed for ease of use in a fast-paced environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvSWS2l0Vri4bn4qnI59jytlJyUzLMT7Yewai92MWB6K89khO_OjcP0FKlftsm6za9ObCW2VRBhF6ydJrguNxp6YwaVUA9eW3ne48N00Dz5cRCo4fLTNlLKVvJmQW8h861ZznIIoQ5UQlA1QZnoHVFOxM7z9Qqh9T-BZnRpFWLBD7u0qLvbZPLA_7P9Hi42l4XmqabmiyqWKYRRTH5tdnhnYGcdgAxnM-yCgWyLfjSBJSnGaMrIiKWqGjGQHWSd7ZdRSt9m5M53sey"/>
+</div>
+</div>
+<!-- Drivers Card -->
+<div class="md:col-span-5 lg:col-span-4 bento-card bg-primary-container border border-primary-fixed-dim rounded-2xl p-xl flex flex-col text-on-primary min-h-[400px]">
+<div class="flex items-center gap-sm mb-lg">
+<span class="material-symbols-outlined text-on-primary-container text-[32px]">local_shipping</span>
+<span class="font-label-md text-label-md text-on-primary-container uppercase tracking-widest">For Drivers</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-white mb-sm">Precision Route Guidance</h3>
+<p class="font-body-md text-body-md text-on-primary-container mb-xl">Dynamic rerouting reduces congestion and fuel consumption by 30% through advanced spatial analytics.</p>
+<div class="mt-auto space-y-md">
+<div class="flex items-center justify-between p-md bg-primary/40 rounded-lg border border-primary-fixed-dim/20">
+<span class="font-mono-data text-mono-data">Live Congestion Sync</span>
+<span class="material-symbols-outlined text-green-400">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-md bg-primary/40 rounded-lg border border-primary-fixed-dim/20">
+<span class="font-mono-data text-mono-data">Safety Protocol Alert</span>
+<span class="material-symbols-outlined text-accent-cta">warning</span>
+</div>
+</div>
+</div>
+<!-- Admin Card -->
+<div class="md:col-span-12 bento-card bg-surface border border-outline-variant rounded-2xl p-xl flex flex-col md:flex-row gap-xl items-center">
+<div class="flex-1 space-y-md">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary text-[32px]">admin_panel_settings</span>
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest">For Admins</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary">Strategic Operational Mastery</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Full-spectrum visibility into every vehicle asset, personnel status, and infrastructure health node. Automate reporting and maintenance schedules with zero manual input.</p>
+<button class="text-primary font-bold flex items-center gap-xs hover:gap-sm transition-all py-sm">
+                                Explore Command Center <span class="material-symbols-outlined">trending_flat</span>
+</button>
+</div>
+<div class="flex-1 w-full grid grid-cols-2 gap-md">
+<div class="bg-surface-container-high p-lg rounded-xl text-center border border-outline-variant">
+<div class="font-display-lg text-primary text-[32px]">99.8%</div>
+<div class="font-label-md text-on-surface-variant">Uptime Efficiency</div>
+</div>
+<div class="bg-surface-container-high p-lg rounded-xl text-center border border-outline-variant">
+<div class="font-display-lg text-secondary text-[32px]">-22%</div>
+<div class="font-label-md text-on-surface-variant">CO2 Footprint</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Connectivity Illustration Section -->
+<section class="py-3xl px-gutter relative overflow-hidden bg-white">
+<div class="max-w-container-max mx-auto flex flex-col lg:flex-row items-center gap-2xl">
+<div class="lg:w-1/2 order-2 lg:order-1">
+<div class="relative w-full aspect-video rounded-2xl overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A sophisticated vector-style illustration of an interconnected smart city grid. Clean, geometric lines represent connectivity paths between electric buses, drones, and campus buildings. The color palette is restricted to shades of primary navy, soft gray, and bright yellow accents. Minimalist and objective, reflecting high-end Swiss design principles and corporate efficiency." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8iJfDAIkdnBpRH2rKu9TXqHR-sV_GSguR0MSrK-CSnVUXuLk4CeqVnVhwV34oOLWmMJd3ar7k2ZeIKrZzjsO-Sur1qYRmlo5MCplH478p7sNOQEkrltYfmSIJl5O_91XtMKEqPOzrE0umjRonn-Y7HX2OToto3VfuF-rJ-EEuBSm11_HjoST3CCMdrXHPrvt7v25ZTwyQ6nIwXSOwPwDKJ-kW3MCsfQ77UqLkr3CJKAm7Lj2J297ew58GZtgVtOaZLQv5M3twV_2I"/>
+</div>
+</div>
+<div class="lg:w-1/2 order-1 lg:order-2 space-y-lg">
+<h2 class="font-headline-lg text-headline-lg text-primary">The Neural Network of Modern Logistics</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">
+                        AGNI isn't just a management tool; it's the operational brain of your campus. By integrating IoT sensors with edge-computing AI, we create a living map that anticipates needs before they arise.
+                    </p>
+<ul class="space-y-md">
+<li class="flex items-start gap-md">
+<span class="material-symbols-outlined text-secondary bg-secondary-fixed p-xs rounded">sensors</span>
+<div>
+<h4 class="font-title-lg text-title-lg text-primary">Real-time IoT Telemetry</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">Monitor tire pressure, battery health, and cabin temperature across the whole fleet.</p>
+</div>
+</li>
+<li class="flex items-start gap-md">
+<span class="material-symbols-outlined text-secondary bg-secondary-fixed p-xs rounded">security</span>
+<div>
+<h4 class="font-title-lg text-title-lg text-primary">Emergency SOS Integration</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">Instant response protocols for security incidents or mechanical failures.</p>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</section>
+<!-- CTA Section -->
+<section class="py-3xl px-gutter">
+<div class="max-w-container-max mx-auto bg-primary rounded-3xl p-2xl text-center relative overflow-hidden">
+<!-- Decorative background -->
+<div class="absolute top-0 right-0 w-96 h-96 bg-secondary opacity-20 blur-[120px]"></div>
+<div class="absolute bottom-0 left-0 w-64 h-64 bg-primary-container opacity-30 blur-[80px]"></div>
+<div class="relative z-10 space-y-xl max-w-3xl mx-auto">
+<h2 class="font-display-lg text-display-lg text-white">Ready to Evolve Your Operations?</h2>
+<p class="font-body-lg text-body-lg text-primary-fixed-dim">Join over 50 leading academic institutions managing their future with AGNI Smart Fleet AI.</p>
+<div class="flex flex-col sm:flex-row gap-md justify-center pt-lg">
+<button class="bg-accent-cta text-on-tertiary-fixed px-3xl py-md rounded-full font-black text-headline-md hover:scale-105 active:scale-95 transition-all shadow-lg">
+                            Request Demo
+                        </button>
+<button class="border border-primary-fixed-dim text-white px-3xl py-md rounded-full font-bold text-headline-md hover:bg-white/10 active:scale-95 transition-all">
+                            Talk to Sales
+                        </button>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="w-full py-xl px-gutter bg-surface-container-lowest border-t border-outline-variant flex flex-col gap-lg">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-xl">
+<div class="space-y-sm">
+<span class="font-headline-md text-headline-md font-bold text-primary">AGNI</span>
+<p class="font-label-md text-label-md text-on-surface-variant max-w-xs">Building the future of autonomous and intelligent campus logistics.</p>
+</div>
+<div class="flex flex-wrap gap-xl">
+<div class="space-y-xs">
+<span class="font-label-md font-bold text-primary">RESOURCES</span>
+<a class="block font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Emergency Protocol</a>
+<a class="block font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Connectivity Status</a>
+</div>
+<div class="space-y-xs">
+<span class="font-label-md font-bold text-primary">LEGAL</span>
+<a class="block font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Privacy Policy</a>
+<a class="block font-label-md text-on-surface-variant hover:text-primary transition-colors" href="#">Terms of Service</a>
+</div>
+</div>
+</div>
+<div class="flex flex-col md:flex-row justify-between items-center border-t border-outline-variant/30 pt-lg text-xs">
+<span class="text-on-surface-variant">© 2024 AGNI Smart Fleet AI. All systems operational.</span>
+<div class="flex gap-lg mt-md md:mt-0">
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm cursor-pointer hover:text-primary">language</span>
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm cursor-pointer hover:text-primary">share</span>
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm cursor-pointer hover:text-primary">verified</span>
+</div>
+</div>
+</footer>
+<!-- AI Assistant Widget -->
+<div class="fixed bottom-lg right-lg z-50">
+<button class="w-14 h-14 bg-accent-cta rounded-full shadow-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-transform group relative" id="ai-trigger">
+<span class="material-symbols-outlined text-primary text-[28px]" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<div class="absolute right-full mr-md top-1/2 -translate-y-1/2 bg-white px-md py-sm rounded-lg border border-outline-variant shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+<span class="font-label-md text-on-surface">Need assistance?</span>
+</div>
+</button>
+</div>
+<!-- Mobile Bottom Navigation (Hidden on Desktop) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 py-2 pb-safe bg-surface border-t border-outline-variant shadow-lg z-50">
+<a class="flex flex-col items-center justify-center text-primary font-bold" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-md text-label-md">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors px-2" href="#">
+<span class="material-symbols-outlined">my_location</span>
+<span class="font-label-md text-label-md">Track</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors px-2" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+<span class="font-label-md text-label-md">AI</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors px-2" href="#">
+<span class="material-symbols-outlined">notifications</span>
+<span class="font-label-md text-label-md">Alerts</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors px-2" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-md text-label-md">Profile</span>
+</a>
+</nav>
+<script>
+        // Micro-interaction for the AI Assistant trigger
+        const aiBtn = document.getElementById('ai-trigger');
+        aiBtn.addEventListener('click', () => {
+            alert('Connecting to AGNI Smart Fleet Core AI...');
+        });
+
+        // Simple scroll reveal effect for bento cards
+        const observerOptions = {
+            threshold: 0.1
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.opacity = '1';
+                    entry.target.style.transform = 'translateY(0)';
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.bento-card').forEach(card => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+            card.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+            observer.observe(card);
+        });
+    </script>
+</body></html>

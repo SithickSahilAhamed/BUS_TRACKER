@@ -3,25 +3,33 @@
  * moving in real time. Data streams straight from Firestore via useBuses.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Navbar, LoadingSpinner, Button } from '../components/common';
+import { Navbar, LoadingSpinner, Button, MobileBottomNav, type BottomNavTab } from '../components/common';
 import { BusMap, isFresh } from '../components/BusMap';
-import { ChatAssistant } from '../components/ChatAssistant';
+import { ChatAssistant, type ChatAssistantHandle } from '../components/ChatAssistant';
 import { SosButton } from '../components/SosButton';
-import { NotificationBell } from '../components/NotificationBell';
+import { NotificationBell, type NotificationBellHandle } from '../components/NotificationBell';
 import { useBuses } from '../hooks/useBuses';
 import { useAuth } from '../context/AuthContext';
 import { estimateEta } from '../utils/eta';
 import { submitMissedBusRequest, subscribeToMyMissedBusRequests } from '../services/firestore';
 import type { Bus, MissedBusRequest } from '../types';
+import IconHome from '~icons/material-symbols/home-outline';
+import IconMyLocation from '~icons/material-symbols/my-location-outline';
+import IconBot from '~icons/material-symbols/smart-toy-outline';
+import IconBell from '~icons/material-symbols/notifications-outline';
+import IconPerson from '~icons/material-symbols/person-outline';
+import IconBus from '~icons/material-symbols/directions-bus';
+import IconClose from '~icons/material-symbols/close';
 
 const statusOf = (bus: Bus): 'live' | 'stale' | 'offline' => {
   if (!bus.isActive) return 'offline';
   return isFresh(bus) ? 'live' : 'stale';
 };
 
-const statusLabel = { live: 'Live', stale: 'Signal lost', offline: 'Not on trip' } as const;
+const STATUS_LABEL = { live: 'Live', stale: 'Signal lost', offline: 'Not on trip' } as const;
+const STATUS_DOT_CLASS = { live: 'bg-green-600', stale: 'bg-amber-500', offline: 'bg-gray-400' } as const;
 
 const StudentMapPage: React.FC = () => {
   const navigate = useNavigate();
@@ -29,12 +37,16 @@ const StudentMapPage: React.FC = () => {
   const { buses, loading, error } = useBuses();
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
+  const [showBusList, setShowBusList] = useState(false);
+  const chatRef = useRef<ChatAssistantHandle>(null);
+  const bellRef = useRef<NotificationBellHandle>(null);
 
   const selectedBus = useMemo(
     () => buses.find((b) => b.busId === selectedBusId) ?? null,
     [buses, selectedBusId]
   );
   const liveCount = buses.filter((b) => statusOf(b) === 'live').length;
+  const isRider = profile?.role === 'student' || profile?.role === 'professor';
 
   const myBus = useMemo(
     () => buses.find((b) => b.busId === profile?.assignedBusId) ?? null,
@@ -62,9 +74,6 @@ const StudentMapPage: React.FC = () => {
 
   const hasPendingMissedBusRequest = myMissedBusRequests.some((r) => r.status === 'pending');
 
-  // Other active buses with free seats right now — capacity minus who's
-  // actually boarded, since occupancy for a bus nobody's assigned-count
-  // reflects isn't the point here; what's free on the bus running past you is.
   const alternativeBuses = useMemo(() => {
     if (!myBus) return [];
     return buses
@@ -115,199 +124,182 @@ const StudentMapPage: React.FC = () => {
     allBuses: buses.map((b) => ({ busId: b.busId, routeName: b.routeName, isActive: b.isActive })),
   });
 
+  const myBusStatusText = !profile?.assignedBusId || !myBus
+    ? 'Not assigned yet — contact the transport office'
+    : !myBus.isActive
+    ? `${myBus.busId} · not on a trip right now`
+    : !myBus.lastLocation
+    ? `${myBus.busId} · waiting for GPS…`
+    : !myStop
+    ? `${myBus.busId} · on a trip`
+    : myEta?.status === 'passed'
+    ? `Already passed ${myStop.name}`
+    : myEta?.status === 'arriving'
+    ? `Arriving now at ${myStop.name}`
+    : `${myEta?.approximate ? '~' : ''}${myEta?.etaMinutes} min to ${myStop.name}`;
+
+  const bottomTabs: BottomNavTab[] = [
+    { key: 'home', icon: IconHome, label: 'Home', to: '/map' },
+    { key: 'track', icon: IconMyLocation, label: 'Track', to: '/map' },
+    { key: 'ai', icon: IconBot, label: 'AI', onClick: () => chatRef.current?.open() },
+    { key: 'alerts', icon: IconBell, label: 'Alerts', onClick: () => bellRef.current?.open() },
+    { key: 'profile', icon: IconPerson, label: 'Profile', onClick: handleLogout },
+  ];
+
   return (
-    <div className="map-wrapper">
+    <div className="fixed inset-0 flex flex-col bg-surface overflow-hidden">
+      {error && (
+        <div className="bg-error-container text-on-error-container text-center text-label-md py-xs px-md shrink-0">
+          {error}
+        </div>
+      )}
+
       <Navbar
-        title="Live Bus Map"
-        subtitle="Agni College of Technology"
+        title="ACT To Go"
+        subtitle={liveCount ? `${liveCount} bus${liveCount === 1 ? '' : 'es'} live now` : 'No buses live right now'}
         rightAction={
           <>
-            <span className={`chip ${liveCount ? '' : 'offline'}`}>
-              <span className={`status-dot ${liveCount ? 'live' : 'offline'}`} />
-              {liveCount} live now
-            </span>
-            <NotificationBell />
-            {profile && (
-              <span className="chip" title={profile.email}>
-                {profile.name.split(' ')[0]} · {profile.role}
-              </span>
-            )}
+            <NotificationBell ref={bellRef} />
             {profile?.role === 'driver' && (
-              <button className="btn btn-secondary btn-sm" onClick={() => navigate('/driver')}>
-                Driver Panel
-              </button>
+              <Button variant="secondary" size="sm" onClick={() => navigate('/driver')}>Driver Panel</Button>
             )}
             {profile?.role === 'admin' && (
-              <button className="btn btn-secondary btn-sm" onClick={() => navigate('/admin')}>
-                Dashboard
-              </button>
+              <Button variant="secondary" size="sm" onClick={() => navigate('/admin')}>Dashboard</Button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
-              Logout
-            </button>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>Logout</Button>
           </>
         }
       />
 
-      <div className="map-container">
+      <div className="relative flex-1 min-h-0">
         {loading ? (
-          <div className="full-center" style={{ minHeight: '100%' }}>
+          <div className="absolute inset-0 flex items-center justify-center">
             <LoadingSpinner label="Connecting to live bus data…" />
           </div>
         ) : (
-          <>
+          <div className="absolute inset-0">
             <BusMap
               buses={buses}
               selectedBusId={selectedBusId}
               onSelectBus={setSelectedBusId}
               follow={follow && !!selectedBus}
             />
-
-            {/* My Bus banner — only meaningful for riders, not drivers/admins viewing the map */}
-            {(profile?.role === 'student' || profile?.role === 'professor') && (
-              <div className="map-top-bar" onClick={() => myBus && setSelectedBusId(myBus.busId)} style={{ cursor: myBus ? 'pointer' : 'default' }}>
-                <span style={{ fontWeight: 600 }}>🚌 My Bus</span>
-                <span style={{ color: 'var(--text-muted)' }}>
-                  {!profile?.assignedBusId || !myBus
-                    ? 'Not assigned yet — contact the transport office'
-                    : !myBus.isActive
-                    ? `${myBus.busId} · not on a trip right now`
-                    : !myBus.lastLocation
-                    ? `${myBus.busId} · waiting for GPS…`
-                    : !myStop
-                    ? `${myBus.busId} · on a trip`
-                    : myEta?.status === 'passed'
-                    ? `${myBus.busId} · already passed ${myStop.name}`
-                    : myEta?.status === 'arriving'
-                    ? `${myBus.busId} · arriving now at ${myStop.name}`
-                    : `${myBus.busId} · ${myEta?.approximate ? '~' : ''}${myEta?.etaMinutes} min to ${myStop.name}`}
-                </span>
-                {myEta?.status === 'passed' && !hasPendingMissedBusRequest && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={(e) => { e.stopPropagation(); setShowMissedBusModal(true); }}
-                  >
-                    Missed your bus?
-                  </button>
-                )}
-                {hasPendingMissedBusRequest && <span className="chip">Alternative bus requested…</span>}
-              </div>
-            )}
-
-            {/* Bus list panel */}
-            <div className="map-panel map-panel-right">
-              <div className="card-header" style={{ marginBottom: '.5rem' }}>
-                🚌 Buses ({buses.length})
-              </div>
-              {error && <p style={{ color: 'var(--danger)', fontSize: '.85rem' }}>{error}</p>}
-              {!buses.length && !error && (
-                <p style={{ color: 'var(--text-muted)', fontSize: '.85rem' }}>
-                  No buses have been added yet.
-                </p>
-              )}
-              <div className="bus-list">
-                {buses.map((bus) => {
-                  const s = statusOf(bus);
-                  return (
-                    <div
-                      key={bus.busId}
-                      className={`bus-list-item ${bus.busId === selectedBusId ? 'selected' : ''}`}
-                      onClick={() =>
-                        setSelectedBusId(bus.busId === selectedBusId ? null : bus.busId)
-                      }
-                    >
-                      <span style={{ fontWeight: 600 }}>{bus.busNumber}</span>
-                      <span style={{ color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {bus.routeName || bus.busName}
-                      </span>
-                      <span className={`status-dot ${s}`} title={statusLabel[s]} />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Selected bus details */}
-            {selectedBus && (
-              <div className="map-panel map-panel-left">
-                <div className="card-header" style={{ marginBottom: '.5rem' }}>
-                  {selectedBus.busNumber} · {selectedBus.busName}
-                  <span className={`status-dot ${statusOf(selectedBus)}`} style={{ marginLeft: 'auto' }} />
-                </div>
-                <div className="info-row">
-                  <span className="label">Status</span>
-                  <span className="value">{statusLabel[statusOf(selectedBus)]}</span>
-                </div>
-                <div className="info-row">
-                  <span className="label">Route</span>
-                  <span className="value">{selectedBus.routeName || '—'}</span>
-                </div>
-                <div className="info-row">
-                  <span className="label">From → To</span>
-                  <span className="value">
-                    {selectedBus.origin || '—'} → {selectedBus.destination || '—'}
-                  </span>
-                </div>
-                <div className="info-row">
-                  <span className="label">Driver</span>
-                  <span className="value">{selectedBus.activeDriverName ?? 'Not on trip'}</span>
-                </div>
-                <div className="info-row">
-                  <span className="label">Speed</span>
-                  <span className="value">
-                    {selectedBus.lastLocation?.speedKmh != null
-                      ? `${Math.round(selectedBus.lastLocation.speedKmh)} km/h`
-                      : '—'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '.5rem', marginTop: '.75rem' }}>
-                  <button
-                    className={`btn btn-sm ${follow ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setFollow((f) => !f)}
-                  >
-                    {follow ? '📍 Following' : 'Follow bus'}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setSelectedBusId(null)}>
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
       </div>
 
-      {(profile?.role === 'student' || profile?.role === 'professor') && profile && (
+      {/* ── Bottom sheet: My Bus / selected bus detail ── */}
+      {!loading && (
+        <div className="shrink-0 bg-surface-container-lowest border-t border-outline-variant rounded-t-2xl shadow-overlay max-h-[42vh] overflow-y-auto">
+          <div className="w-9 h-1 bg-outline-variant rounded-full mx-auto mt-sm" />
+
+          {/* Quick bus-browser row */}
+          <div className="px-md pt-sm">
+            <button
+              className="flex items-center gap-xs text-label-md text-on-surface-variant font-bold uppercase tracking-wider mb-xs"
+              onClick={() => setShowBusList((v) => !v)}
+            >
+              <IconBus className="w-4 h-4" /> All buses ({buses.length})
+            </button>
+            {showBusList && (
+              <div className="flex gap-sm overflow-x-auto pb-sm mb-xs">
+                {buses.map((bus) => {
+                  const s = statusOf(bus);
+                  return (
+                    <button
+                      key={bus.busId}
+                      onClick={() => { setSelectedBusId(bus.busId === selectedBusId ? null : bus.busId); setFollow(true); }}
+                      className={`shrink-0 flex items-center gap-xs px-md py-sm rounded-lg border text-label-md ${
+                        bus.busId === selectedBusId
+                          ? 'border-primary bg-primary-fixed text-on-primary-fixed'
+                          : 'border-outline-variant text-on-surface'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${STATUS_DOT_CLASS[s]}`} />
+                      {bus.busNumber}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {selectedBus ? (
+            <div className="px-md pb-md">
+              <div className="flex items-center gap-sm mb-sm">
+                <span className="font-title-lg text-title-lg text-on-surface flex-1">
+                  {selectedBus.busNumber} · {selectedBus.busName}
+                </span>
+                <span className={`w-2.5 h-2.5 rounded-full ${STATUS_DOT_CLASS[statusOf(selectedBus)]}`} />
+              </div>
+              <dl className="grid grid-cols-2 gap-sm text-body-md mb-md">
+                <div><dt className="text-label-md text-on-surface-variant">Status</dt><dd>{STATUS_LABEL[statusOf(selectedBus)]}</dd></div>
+                <div><dt className="text-label-md text-on-surface-variant">Route</dt><dd>{selectedBus.routeName || '—'}</dd></div>
+                <div className="col-span-2"><dt className="text-label-md text-on-surface-variant">From → To</dt><dd>{selectedBus.origin || '—'} → {selectedBus.destination || '—'}</dd></div>
+                <div><dt className="text-label-md text-on-surface-variant">Driver</dt><dd>{selectedBus.activeDriverName ?? 'Not on trip'}</dd></div>
+                <div><dt className="text-label-md text-on-surface-variant">Speed</dt><dd>{selectedBus.lastLocation?.speedKmh != null ? `${Math.round(selectedBus.lastLocation.speedKmh)} km/h` : '—'}</dd></div>
+              </dl>
+              <div className="flex gap-sm">
+                <Button size="sm" variant={follow ? 'primary' : 'secondary'} onClick={() => setFollow((f) => !f)}>
+                  <IconMyLocation className="w-4 h-4" /> {follow ? 'Following' : 'Follow bus'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedBusId(null)}>
+                  <IconClose className="w-4 h-4" /> Close
+                </Button>
+              </div>
+            </div>
+          ) : isRider ? (
+            <div className="px-md pb-md">
+              <span className="font-label-md text-label-md text-secondary uppercase tracking-wider">Live Prediction</span>
+              <h2 className="font-headline-md text-title-lg text-on-surface mt-xs mb-xs">
+                {myStop?.name ?? 'Your stop'}
+              </h2>
+              <p className="text-body-md text-on-surface-variant mb-md">{myBusStatusText}</p>
+              {myEta?.status === 'passed' && !hasPendingMissedBusRequest && (
+                <Button size="sm" onClick={() => setShowMissedBusModal(true)}>Missed your bus?</Button>
+              )}
+              {hasPendingMissedBusRequest && (
+                <span className="inline-flex px-sm py-xs rounded-full bg-secondary-fixed text-on-secondary-fixed-variant text-label-md">
+                  Alternative bus requested…
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="px-md pb-md text-body-md text-on-surface-variant">
+              Tap "All buses" above, or a bus on the map, to see its live details.
+            </div>
+          )}
+        </div>
+      )}
+
+      {isRider && (
+        <MobileBottomNav tabs={bottomTabs} />
+      )}
+
+      {isRider && profile && (
         <>
-          <ChatAssistant title="Travel Assistant" examplePrompt="When will my bus arrive?" buildContext={buildChatContext} />
+          <ChatAssistant ref={chatRef} hideTrigger title="Travel Assistant" examplePrompt="When will my bus arrive?" buildContext={buildChatContext} />
           <SosButton userId={profile.uid} userName={profile.name} role={profile.role as 'student' | 'professor'} busId={myBus?.busId ?? null} />
         </>
       )}
 
       {/* ── Missed bus modal ── */}
       {showMissedBusModal && myBus && (
-        <div className="modal-backdrop" onClick={() => !missedBusSaving && setShowMissedBusModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h2 className="panel-title">Missed {myBus.busId}?</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+        <div className="fixed inset-0 z-[200] bg-black/40 flex items-end sm:items-center justify-center" onClick={() => !missedBusSaving && setShowMissedBusModal(false)}>
+          <div className="bg-surface-container-lowest rounded-t-2xl sm:rounded-xl w-full sm:max-w-md p-lg" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-title-lg text-title-lg text-on-surface mb-xs">Missed {myBus.busId}?</h2>
+            <p className="text-body-md text-on-surface-variant mb-md">
               Pick a bus that's currently running with free seats. The admin approves it before it's official.
             </p>
             {alternativeBuses.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)' }}>No other bus is running with free seats right now.</p>
+              <p className="text-body-md text-on-surface-variant mb-md">No other bus is running with free seats right now.</p>
             ) : (
-              <div style={{ display: 'grid', gap: '.5rem', marginBottom: '1rem' }}>
+              <div className="flex flex-col gap-sm mb-md">
                 {alternativeBuses.map(({ bus, availableSeats }) => (
-                  <div
-                    key={bus.busId}
-                    style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '.6rem .75rem', borderRadius: 'var(--radius)',
-                      background: 'var(--surface-2)', border: '1px solid var(--border)',
-                    }}
-                  >
-                    <span>
+                  <div key={bus.busId} className="flex items-center justify-between gap-sm p-sm rounded-lg bg-surface-container-low border border-outline-variant">
+                    <span className="text-body-md">
                       <strong>{bus.busId}</strong>
-                      <span style={{ color: 'var(--text-muted)' }}> · {bus.routeName || bus.busName} · {availableSeats} seats free</span>
+                      <span className="text-on-surface-variant"> · {bus.routeName || bus.busName} · {availableSeats} seats free</span>
                     </span>
                     <Button size="sm" isLoading={missedBusSaving} onClick={() => handleRequestAlternative(bus.busId, bus.busNumber)}>
                       Request
@@ -316,7 +308,7 @@ const StudentMapPage: React.FC = () => {
                 ))}
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="flex justify-end">
               <Button variant="secondary" onClick={() => setShowMissedBusModal(false)} disabled={missedBusSaving}>
                 Close
               </Button>

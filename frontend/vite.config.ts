@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import Icons from 'unplugin-icons/vite';
 
 export default defineConfig({
   plugins: [
     react(),
+    Icons({ compiler: 'jsx', jsx: 'react' }),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon-48.png', 'apple-touch-icon.png'],
@@ -15,8 +17,8 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#f4f0e8',
-        theme_color: '#0f5d8f',
+        background_color: '#f9f9ff',
+        theme_color: '#003162',
         icons: [
           { src: '/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

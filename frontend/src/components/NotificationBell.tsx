@@ -3,9 +3,15 @@
  * why this is in-app, not push). Merges two live streams: notifications
  * aimed at this specific user, and ones broadcast to everyone with their
  * role (e.g. all admins get SOS alerts).
+ *
+ * `hideTrigger` lets a mobile page's bottom-nav "Alerts" tab open this same
+ * panel (and its live subscriptions) via the exposed ref, instead of
+ * duplicating a second bell/subscription pair — see MobileBottomNav.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import IconBell from '~icons/material-symbols/notifications-outline';
+import IconClose from '~icons/material-symbols/close';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToMyNotifications, subscribeToRoleNotifications, markNotificationRead } from '../services/firestore';
 import type { AppNotification } from '../types';
@@ -19,64 +25,94 @@ const timeAgo = (ts: AppNotification['createdAt']): string => {
   return ts.toDate().toLocaleDateString();
 };
 
-export const NotificationBell: React.FC = () => {
-  const { user, profile } = useAuth();
-  const [byUid, setByUid] = useState<AppNotification[]>([]);
-  const [byRole, setByRole] = useState<AppNotification[]>([]);
-  const [open, setOpen] = useState(false);
+export interface NotificationBellHandle {
+  open: () => void;
+}
 
-  useEffect(() => {
-    if (!user) return;
-    return subscribeToMyNotifications(user.uid, setByUid, () => {});
-  }, [user]);
+interface NotificationBellProps {
+  hideTrigger?: boolean;
+}
 
-  useEffect(() => {
-    if (!profile) return;
-    return subscribeToRoleNotifications(profile.role, setByRole, () => {});
-  }, [profile]);
+export const NotificationBell = forwardRef<NotificationBellHandle, NotificationBellProps>(
+  ({ hideTrigger }, ref) => {
+    const { user, profile } = useAuth();
+    const [byUid, setByUid] = useState<AppNotification[]>([]);
+    const [byRole, setByRole] = useState<AppNotification[]>([]);
+    const [open, setOpen] = useState(false);
 
-  const notifications = [...byUid, ...byRole].sort(
-    (a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)
-  );
-  const unreadCount = notifications.filter((n) => !n.read).length;
+    useImperativeHandle(ref, () => ({ open: () => setOpen(true) }));
 
-  const handleOpenNotification = (n: AppNotification) => {
-    if (!n.read) markNotificationRead(n.id).catch(() => {});
-  };
+    useEffect(() => {
+      if (!user) return;
+      return subscribeToMyNotifications(user.uid, setByUid, () => {});
+    }, [user]);
 
-  return (
-    <div className="notif-bell-wrapper">
-      <button className="notif-bell-button" onClick={() => setOpen((o) => !o)} aria-label="Notifications">
-        🔔
-        {unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-      </button>
+    useEffect(() => {
+      if (!profile) return;
+      return subscribeToRoleNotifications(profile.role, setByRole, () => {});
+    }, [profile]);
 
-      {open && (
-        <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 599 }} onClick={() => setOpen(false)} />
-          <div className="notif-panel">
-            <div className="notif-panel-header">
-              <span>Notifications</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>✕</button>
-            </div>
-            {notifications.length === 0 ? (
-              <p className="notif-empty">Nothing yet.</p>
-            ) : (
-              notifications.slice(0, 30).map((n) => (
-                <div
-                  key={n.id}
-                  className={`notif-item ${n.read ? '' : 'notif-item-unread'}`}
-                  onClick={() => handleOpenNotification(n)}
-                >
-                  <div className="notif-item-title">{n.title}</div>
-                  <div className="notif-item-body">{n.body}</div>
-                  <div className="notif-item-time">{timeAgo(n.createdAt)}</div>
-                </div>
-              ))
+    const notifications = [...byUid, ...byRole].sort(
+      (a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)
+    );
+    const unreadCount = notifications.filter((n) => !n.read).length;
+
+    const handleOpenNotification = (n: AppNotification) => {
+      if (!n.read) markNotificationRead(n.id).catch(() => {});
+    };
+
+    return (
+      <div className="relative">
+        {!hideTrigger && (
+          <button
+            className="relative w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+            onClick={() => setOpen((o) => !o)}
+            aria-label="Notifications"
+          >
+            <IconBell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 bg-error text-on-error text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-surface">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
             )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
+          </button>
+        )}
+
+        {open && (
+          <>
+            <div className="fixed inset-0 z-[599]" onClick={() => setOpen(false)} />
+            <div className="fixed sm:absolute inset-x-4 sm:inset-x-auto top-16 sm:top-auto sm:right-0 sm:mt-2 w-auto sm:w-80 max-h-[70vh] overflow-y-auto bg-surface-container-lowest border border-outline-variant shadow-overlay rounded-xl z-[600]">
+              <div className="flex items-center justify-between px-md py-sm border-b border-outline-variant sticky top-0 bg-surface-container-lowest">
+                <span className="font-title-lg text-title-lg text-primary">Notifications</span>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high"
+                >
+                  <IconClose className="w-4 h-4" />
+                </button>
+              </div>
+              {notifications.length === 0 ? (
+                <p className="p-lg text-center text-body-md text-on-surface-variant">Nothing yet.</p>
+              ) : (
+                notifications.slice(0, 30).map((n) => (
+                  <div
+                    key={n.id}
+                    className={`px-md py-sm border-b border-outline-variant last:border-0 cursor-pointer hover:bg-surface-container-low ${
+                      n.read ? '' : 'bg-secondary-fixed/40'
+                    }`}
+                    onClick={() => handleOpenNotification(n)}
+                  >
+                    <div className="font-body-md text-body-md font-bold text-on-surface">{n.title}</div>
+                    <div className="text-body-md text-on-surface-variant">{n.body}</div>
+                    <div className="text-label-md text-on-surface-variant mt-xs">{timeAgo(n.createdAt)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+);
+NotificationBell.displayName = 'NotificationBell';
