@@ -24,10 +24,23 @@ service cloud.firestore {
       return signedIn() && userData().role == 'maintenance' && userData().active == true;
     }
 
+    function isPrincipal() {
+      return signedIn() && userData().role == 'principal' && userData().active == true;
+    }
+
+    function isParent() {
+      return signedIn() && userData().role == 'parent' && userData().active == true;
+    }
+
     match /users/{uid} {
       // Drivers can read rider profiles too — needed for the waiting-student
       // count and boarding roster on their bus (PROJECT_SPEC.md section 3).
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isActiveDriver());
+      // Principal gets the same fleet-wide read for Student Analysis /
+      // reporting (section 6). A parent can only read their own linked child.
+      allow read: if signedIn() && (
+        request.auth.uid == uid || isAdmin() || isActiveDriver() || isPrincipal()
+        || (isParent() && userData().linkedStudentUid == uid)
+      );
 
       allow create: if
         // Self-signup: role limited to student/professor, fixed key set,
@@ -37,9 +50,14 @@ service cloud.firestore {
           && request.resource.data.active == true
           && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$')
           && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'active', 'createdAt']))
-        // Admin creating a driver or maintenance profile (uid comes from secondary-app signup)
-        || (isAdmin() && request.resource.data.role in ['driver', 'maintenance']
-          && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$'));
+        // Admin creating a driver/maintenance/principal profile (uid comes from secondary-app
+        // signup) — these are college staff, so a college email is required.
+        || (isAdmin() && request.resource.data.role in ['driver', 'maintenance', 'principal']
+          && request.resource.data.email.lower().matches('.*@act[.]edu[.]in$'))
+        // Admin creating a parent profile — parents are not college staff, so any
+        // reasonably-shaped email is accepted (their own personal address).
+        || (isAdmin() && request.resource.data.role == 'parent'
+          && request.resource.data.email.lower().matches('.+@.+[.].+'));
 
       allow update: if
         (request.auth.uid == uid
@@ -124,15 +142,18 @@ service cloud.firestore {
 
     match /fuelRecords/{recordId} {
       // PROJECT_SPEC.md section 5 fuel management. History, so no update —
-      // fix a mistake by admin deleting and re-adding.
-      allow read, create: if isAdmin() || isMaintenance();
+      // fix a mistake by admin deleting and re-adding. Principal reads for
+      // Budget Analytics (section 1.6).
+      allow read: if isAdmin() || isMaintenance() || isPrincipal();
+      allow create: if isAdmin() || isMaintenance();
       allow delete: if isAdmin();
     }
 
     match /maintenanceRecords/{recordId} {
       // Covers section 5's Maintenance History, Tyre Management, and
       // Battery Management — one log with a category, not three collections.
-      allow read, create: if isAdmin() || isMaintenance();
+      allow read: if isAdmin() || isMaintenance() || isPrincipal();
+      allow create: if isAdmin() || isMaintenance();
       allow delete: if isAdmin();
     }
 
@@ -141,8 +162,30 @@ service cloud.firestore {
       // Analysis). A driver can only self-attribute their own completed
       // trip; no cross-reference to the bus doc needed (unlike
       // entryExitLogs) since driverId == self is enough to prove it's theirs.
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isPrincipal();
       allow create: if isActiveDriver() && request.resource.data.driverId == request.auth.uid;
+    }
+
+    match /sosAlerts/{alertId} {
+      // Emergency SOS (PROJECT_SPEC.md sections 2 + 3) — any signed-in rider
+      // or driver can self-report; only admin triages.
+      allow read, update: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.resolved == false
+        && request.resource.data.keys().hasOnly(['userId', 'userName', 'role', 'busId', 'location', 'resolved', 'createdAt']);
+    }
+
+    match /notifications/{notificationId} {
+      // In-app Notification Center (PROJECT_SPEC.md section 7). Only
+      // written server-side by Cloud Function triggers (admin SDK bypasses
+      // rules) — no client create rule here means client creates are
+      // always denied, by omission.
+      allow read: if signedIn() && (
+        resource.data.recipientUid == request.auth.uid || resource.data.recipientRole == userData().role
+      );
+      allow update: if signedIn() && resource.data.recipientUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
     }
   }
 }

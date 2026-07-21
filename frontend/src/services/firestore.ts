@@ -5,7 +5,7 @@
  */
 
 import { deleteApp, initializeApp } from 'firebase/app';
-import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
+import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
 import {
   addDoc,
   arrayRemove,
@@ -27,17 +27,21 @@ import {
 } from 'firebase/firestore';
 import { db, firebaseConfig } from '../lib/firebase';
 import type {
+  AppNotification,
   Bus,
   BusInput,
   DriverReport,
   EntryExitLog,
   FuelRecord,
   GeofenceEvent,
+  LatLng,
   MaintenanceRecord,
   MissedBusRequest,
   ReportType,
+  SosAlert,
   TripRecord,
   UserProfile,
+  UserRole,
   VehicleProfile,
 } from '../types';
 
@@ -224,6 +228,20 @@ export function subscribeToStudents(
   );
 }
 
+/** A single user's own profile doc — used by the Parent Panel to follow
+ *  their linked child live (assignment changes reflect without a refresh). */
+export function subscribeToUserProfile(
+  uid: string,
+  cb: (profile: UserProfile | null) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, 'users', uid),
+    (snap) => cb(snap.exists() ? ({ uid: snap.id, ...snap.data() } as UserProfile) : null),
+    (err) => onError?.(err)
+  );
+}
+
 /** Sets or clears a student/professor's permanent bus + boarding stop. */
 export async function assignStudentStop(
   uid: string,
@@ -239,19 +257,26 @@ export async function assignStudentStop(
  * "admin creates staff" security rule applies.
  */
 async function createStaffAccount(
-  role: 'driver' | 'maintenance',
+  role: 'driver' | 'maintenance' | 'parent' | 'principal',
   input: { name: string; email: string; phone: string; password: string }
 ): Promise<string> {
   const secondary = initializeApp(firebaseConfig, `${role}-create-${Date.now()}`);
+  const secondaryAuth = getAuth(secondary);
+  // The secondary app doesn't inherit ../lib/firebase.ts's emulator wiring —
+  // without this, account creation silently hits production Auth even when
+  // the rest of the app is pointed at the emulator.
+  if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATOR === 'true') {
+    connectAuthEmulator(secondaryAuth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  }
   let uid: string;
   try {
     const cred = await createUserWithEmailAndPassword(
-      getAuth(secondary),
+      secondaryAuth,
       input.email.trim(),
       input.password
     );
     uid = cred.user.uid;
-    await signOut(getAuth(secondary));
+    await signOut(secondaryAuth);
   } finally {
     await deleteApp(secondary);
   }
@@ -279,6 +304,64 @@ export const createDriverAccount = (input: { name: string; email: string; phone:
 
 export const createMaintenanceAccount = (input: { name: string; email: string; phone: string; password: string }) =>
   createStaffAccount('maintenance', input);
+
+export const createParentAccount = (input: { name: string; email: string; phone: string; password: string }) =>
+  createStaffAccount('parent', input);
+
+export const createPrincipalAccount = (input: { name: string; email: string; phone: string; password: string }) =>
+  createStaffAccount('principal', input);
+
+// ============================================================================
+// PARENT (admin)
+// ============================================================================
+
+export function subscribeToParents(
+  cb: (parents: UserProfile[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'users'), where('role', '==', 'parent')),
+    (snap) => {
+      const parents = snap.docs
+        .map((d) => ({ uid: d.id, ...d.data() } as UserProfile))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      cb(parents);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+export async function setParentActive(uid: string, active: boolean): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { active });
+}
+
+export async function linkParentToStudent(parentUid: string, studentUid: string | null): Promise<void> {
+  await updateDoc(doc(db, 'users', parentUid), { linkedStudentUid: studentUid });
+}
+
+// ============================================================================
+// PRINCIPAL (admin)
+// ============================================================================
+
+export function subscribeToPrincipals(
+  cb: (principals: UserProfile[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'users'), where('role', '==', 'principal')),
+    (snap) => {
+      const principals = snap.docs
+        .map((d) => ({ uid: d.id, ...d.data() } as UserProfile))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      cb(principals);
+    },
+    (err) => onError?.(err)
+  );
+}
+
+export async function setPrincipalActive(uid: string, active: boolean): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { active });
+}
 
 // ============================================================================
 // DRIVER REPORTS (incident + damage)
@@ -607,4 +690,86 @@ export function subscribeToAllFuelRecords(
     (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FuelRecord))),
     (err) => onError?.(err)
   );
+}
+
+/** Fleet-wide maintenance records — for Principal's budget view. */
+export function subscribeToAllMaintenanceRecords(
+  cb: (records: MaintenanceRecord[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'maintenanceRecords'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as MaintenanceRecord))),
+    (err) => onError?.(err)
+  );
+}
+
+// ============================================================================
+// EMERGENCY SOS (PROJECT_SPEC.md sections 2 + 3)
+// ============================================================================
+
+export async function submitSosAlert(input: {
+  userId: string;
+  userName: string;
+  role: 'student' | 'professor' | 'driver';
+  busId: string | null;
+  location: LatLng | null;
+}): Promise<void> {
+  await addDoc(collection(db, 'sosAlerts'), {
+    ...input,
+    resolved: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
+/** Admin-only — enforced by firestore.rules. */
+export function subscribeToSosAlerts(
+  cb: (alerts: SosAlert[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'sosAlerts'), orderBy('createdAt', 'desc')),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as SosAlert))),
+    (err) => onError?.(err)
+  );
+}
+
+export async function resolveSosAlert(id: string): Promise<void> {
+  await updateDoc(doc(db, 'sosAlerts', id), { resolved: true, resolvedAt: serverTimestamp() });
+}
+
+// ============================================================================
+// NOTIFICATIONS (PROJECT_SPEC.md section 7 — in-app; see CLAUDE.md for why
+// this isn't push. Docs are created server-side by functions/src/index.ts's
+// Firestore triggers, never directly by the client.)
+// ============================================================================
+
+/** A specific person's notifications — scoped by `where` so the rules allow it. */
+export function subscribeToMyNotifications(
+  uid: string,
+  cb: (notifications: AppNotification[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'notifications'), where('recipientUid', '==', uid)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AppNotification))),
+    (err) => onError?.(err)
+  );
+}
+
+/** Everyone-with-this-role notifications (e.g. all admins get SOS alerts). */
+export function subscribeToRoleNotifications(
+  role: UserRole,
+  cb: (notifications: AppNotification[]) => void,
+  onError?: (e: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'notifications'), where('recipientRole', '==', role)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AppNotification))),
+    (err) => onError?.(err)
+  );
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await updateDoc(doc(db, 'notifications', id), { read: true });
 }

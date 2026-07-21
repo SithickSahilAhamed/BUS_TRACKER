@@ -14,6 +14,8 @@ import StudentMapPage from './pages/StudentMap';
 import DriverPanelPage from './pages/DriverPanel';
 import AdminDashboardPage from './pages/AdminDashboard';
 import MaintenancePanelPage from './pages/MaintenancePanel';
+import ParentPanelPage from './pages/ParentPanel';
+import PrincipalPanelPage from './pages/PrincipalPanel';
 
 const LoadingFallback = () => <LoadingSpinner label="Loading…" />;
 
@@ -31,6 +33,8 @@ function App() {
           <Route path="/driver/login" element={<LoginPage variant="driver" />} />
           <Route path="/admin/login" element={<LoginPage variant="admin" />} />
           <Route path="/maintenance/login" element={<LoginPage variant="maintenance" />} />
+          <Route path="/parent/login" element={<LoginPage variant="parent" />} />
+          <Route path="/principal/login" element={<LoginPage variant="principal" />} />
 
           {/* Live map — any signed-in role */}
           {['/student', '/map'].map((path) => (
@@ -61,6 +65,26 @@ function App() {
             element={
               <RequireRole roles={['maintenance']}>
                 <MaintenancePanelPage />
+              </RequireRole>
+            }
+          />
+
+          {/* Parent */}
+          <Route
+            path="/parent"
+            element={
+              <RequireRole roles={['parent']}>
+                <ParentPanelPage />
+              </RequireRole>
+            }
+          />
+
+          {/* Principal */}
+          <Route
+            path="/principal"
+            element={
+              <RequireRole roles={['principal']}>
+                <PrincipalPanelPage />
               </RequireRole>
             }
           />

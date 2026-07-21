@@ -11,6 +11,7 @@ import { AdminSidebar } from '../components/admin/Sidebar';
 import { FleetMaintenanceTab } from '../components/admin/FleetMaintenanceTab';
 import { AnalyticsTab } from '../components/admin/AnalyticsTab';
 import { ChatAssistant } from '../components/ChatAssistant';
+import { NotificationBell } from '../components/NotificationBell';
 import { BusMap, isFresh } from '../components/BusMap';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
@@ -34,11 +35,20 @@ import {
   subscribeToEntryExitLogs,
   suggestAlternativeBuses,
   reallocateBusRiders,
+  subscribeToSosAlerts,
+  resolveSosAlert,
+  subscribeToParents,
+  setParentActive,
+  createParentAccount,
+  linkParentToStudent,
+  subscribeToPrincipals,
+  setPrincipalActive,
+  createPrincipalAccount,
   normalizeBusId,
 } from '../services/firestore';
 import { buildRoute } from '../services/geo';
 import { progressAlongPath } from '../utils/eta';
-import type { Bus, DriverReport, EntryExitLog, MissedBusRequest, UserProfile } from '../types';
+import type { Bus, DriverReport, EntryExitLog, MissedBusRequest, SosAlert, UserProfile } from '../types';
 
 // ─── Forms ────────────────────────────────────────────────────────────────────
 
@@ -102,8 +112,11 @@ export const AdminDashboardPage: React.FC = () => {
   const { buses, loading: busesLoading } = useBuses();
   const [drivers, setDrivers] = useState<UserProfile[]>([]);
   const [maintenanceStaff, setMaintenanceStaff] = useState<UserProfile[]>([]);
+  const [parents, setParents] = useState<UserProfile[]>([]);
+  const [principals, setPrincipals] = useState<UserProfile[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [reports, setReports] = useState<DriverReport[]>([]);
+  const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([]);
   const [missedBusRequests, setMissedBusRequests] = useState<MissedBusRequest[]>([]);
   const [entryExitLogs, setEntryExitLogs] = useState<EntryExitLog[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +138,19 @@ export const AdminDashboardPage: React.FC = () => {
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [maintenanceForm, setMaintenanceForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
   const [maintenanceSaving, setMaintenanceSaving] = useState(false);
+
+  // Parent modal + link-to-student
+  const [showParentModal, setShowParentModal] = useState(false);
+  const [parentForm, setParentForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
+  const [parentSaving, setParentSaving] = useState(false);
+  const [linkingParent, setLinkingParent] = useState<UserProfile | null>(null);
+  const [linkStudentUid, setLinkStudentUid] = useState('');
+  const [linkSaving, setLinkSaving] = useState(false);
+
+  // Principal modal
+  const [showPrincipalModal, setShowPrincipalModal] = useState(false);
+  const [principalForm, setPrincipalForm] = useState<DriverForm>(EMPTY_DRIVER_FORM);
+  const [principalSaving, setPrincipalSaving] = useState(false);
 
   // Assign-stop modal
   const [assigningStudent, setAssigningStudent] = useState<UserProfile | null>(null);
@@ -154,6 +180,20 @@ export const AdminDashboardPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const unsub = subscribeToParents(setParents, () =>
+      setError('Could not load parent accounts. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToPrincipals(setPrincipals, () =>
+      setError('Could not load principal accounts. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
     const unsub = subscribeToStudents(setStudents, () =>
       setError('Could not load students. Are you signed in as admin?')
     );
@@ -163,6 +203,13 @@ export const AdminDashboardPage: React.FC = () => {
   useEffect(() => {
     const unsub = subscribeToReports(setReports, () =>
       setError('Could not load reports. Are you signed in as admin?')
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToSosAlerts(setSosAlerts, () =>
+      setError('Could not load SOS alerts. Are you signed in as admin?')
     );
     return unsub;
   }, []);
@@ -357,6 +404,88 @@ export const AdminDashboardPage: React.FC = () => {
     }
   };
 
+  // ─── Parent handlers ────────────────────────────────────────────────────────
+
+  const handleCreateParent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setParentSaving(true);
+    setError(null);
+    try {
+      await createParentAccount(parentForm);
+      setSuccess(`Parent account for ${parentForm.name} created. Link them to their child, then share the login.`);
+      setShowParentModal(false);
+      setParentForm(EMPTY_DRIVER_FORM);
+    } catch (err: any) {
+      setError(
+        err?.code === 'auth/email-already-in-use'
+          ? 'That email already has an account.'
+          : err?.message ?? 'Creating the parent account failed.'
+      );
+    } finally {
+      setParentSaving(false);
+    }
+  };
+
+  const handleToggleParent = async (parent: UserProfile) => {
+    try {
+      await setParentActive(parent.uid, !parent.active);
+      setSuccess(`${parent.name} is now ${parent.active ? 'deactivated' : 'active'}.`);
+    } catch {
+      setError('Updating the parent account failed.');
+    }
+  };
+
+  const openLinkParent = (parent: UserProfile) => {
+    setLinkingParent(parent);
+    setLinkStudentUid(parent.linkedStudentUid ?? '');
+  };
+
+  const handleSaveLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!linkingParent) return;
+    setLinkSaving(true);
+    try {
+      await linkParentToStudent(linkingParent.uid, linkStudentUid || null);
+      setSuccess(`${linkingParent.name} is now linked to ${linkStudentUid ? students.find((s) => s.uid === linkStudentUid)?.name ?? 'the selected student' : 'no one'}.`);
+      setLinkingParent(null);
+    } catch {
+      setError('Linking the parent to a student failed.');
+    } finally {
+      setLinkSaving(false);
+    }
+  };
+
+  // ─── Principal handlers ─────────────────────────────────────────────────────
+
+  const handleCreatePrincipal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPrincipalSaving(true);
+    setError(null);
+    try {
+      await createPrincipalAccount(principalForm);
+      setSuccess(`Principal account for ${principalForm.name} created. They can log in at /principal/login now.`);
+      setShowPrincipalModal(false);
+      setPrincipalForm(EMPTY_DRIVER_FORM);
+    } catch (err: any) {
+      setError(
+        err?.code === 'auth/email-already-in-use'
+          ? 'That email already has an account.'
+          : err?.message ?? 'Creating the principal account failed.'
+      );
+    } finally {
+      setPrincipalSaving(false);
+    }
+  };
+
+  const handleTogglePrincipal = async (principal: UserProfile) => {
+    try {
+      await setPrincipalActive(principal.uid, !principal.active);
+      setSuccess(`${principal.name} is now ${principal.active ? 'deactivated' : 'active'}.`);
+    } catch {
+      setError('Updating the principal account failed.');
+    }
+  };
+
   // ─── Student assignment handlers ────────────────────────────────────────────
 
   const openAssignModal = (student: UserProfile) => {
@@ -405,6 +534,15 @@ export const AdminDashboardPage: React.FC = () => {
       setSuccess(`Report on ${report.busId} marked resolved.`);
     } catch {
       setError('Resolving the report failed.');
+    }
+  };
+
+  const handleResolveSos = async (alert: SosAlert) => {
+    try {
+      await resolveSosAlert(alert.id);
+      setSuccess(`SOS from ${alert.userName} marked resolved.`);
+    } catch {
+      setError('Resolving the alert failed.');
     }
   };
 
@@ -658,6 +796,95 @@ export const AdminDashboardPage: React.FC = () => {
           </table>
         </div>
       )}
+
+      <div className="section-header" style={{ marginTop: '2rem' }}>
+        <div className="panel-title" style={{ marginBottom: 0 }}>Parents</div>
+        <Button onClick={() => setShowParentModal(true)}>+ Add parent</Button>
+      </div>
+      {parents.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>
+          No parent accounts yet. Create one, then link it to their child so they see the live bus.
+        </p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Phone</th><th>Linked child</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {parents.map((parent) => {
+                const child = students.find((s) => s.uid === parent.linkedStudentUid);
+                return (
+                  <tr key={parent.uid}>
+                    <td><strong>{parent.name}</strong></td>
+                    <td>{parent.email}</td>
+                    <td>{parent.phone || '—'}</td>
+                    <td>{child ? child.name : <span style={{ color: 'var(--text-muted)' }}>not linked</span>}</td>
+                    <td>
+                      {parent.active
+                        ? <Badge variant="success">active</Badge>
+                        : <Badge variant="danger">deactivated</Badge>}
+                    </td>
+                    <td style={{ display: 'flex', gap: '.5rem' }}>
+                      <Button variant="secondary" size="sm" onClick={() => openLinkParent(parent)}>
+                        {child ? 'Change link' : 'Link child'}
+                      </Button>
+                      <Button
+                        variant={parent.active ? 'danger' : 'primary'}
+                        size="sm"
+                        onClick={() => handleToggleParent(parent)}
+                      >
+                        {parent.active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="section-header" style={{ marginTop: '2rem' }}>
+        <div className="panel-title" style={{ marginBottom: 0 }}>Principal / Management</div>
+        <Button onClick={() => setShowPrincipalModal(true)}>+ Add principal</Button>
+      </div>
+      {principals.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>
+          No principal accounts yet. They get a read-only fleet + budget dashboard.
+        </p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {principals.map((principal) => (
+                <tr key={principal.uid}>
+                  <td><strong>{principal.name}</strong></td>
+                  <td>{principal.email}</td>
+                  <td>{principal.phone || '—'}</td>
+                  <td>
+                    {principal.active
+                      ? <Badge variant="success">active</Badge>
+                      : <Badge variant="danger">deactivated</Badge>}
+                  </td>
+                  <td>
+                    <Button
+                      variant={principal.active ? 'danger' : 'primary'}
+                      size="sm"
+                      onClick={() => handleTogglePrincipal(principal)}
+                    >
+                      {principal.active ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 
@@ -707,47 +934,97 @@ export const AdminDashboardPage: React.FC = () => {
   );
 
   const renderReports = () => (
-    <div className="panel">
-      <div className="section-header">
-        <div className="panel-title" style={{ marginBottom: 0 }}>Driver Reports</div>
-      </div>
-      {reports.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)' }}>No incident or damage reports yet.</p>
-      ) : (
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr><th>Type</th><th>Bus</th><th>Driver</th><th>Details</th><th>When</th><th>Status</th><th></th></tr>
-            </thead>
-            <tbody>
-              {reports.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    {r.type === 'incident' ? '🚧' : '🔧'} {r.category}
-                  </td>
-                  <td><strong>{r.busNumber}</strong></td>
-                  <td>{r.driverName}</td>
-                  <td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td>
-                  <td>{r.createdAt ? r.createdAt.toDate().toLocaleString() : 'just now'}</td>
-                  <td>
-                    {r.status === 'open'
-                      ? <Badge variant="warning">open</Badge>
-                      : <Badge variant="success">resolved</Badge>}
-                  </td>
-                  <td>
-                    {r.status === 'open' && (
-                      <Button variant="secondary" size="sm" onClick={() => handleResolveReport(r)}>
-                        Mark resolved
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <>
+      <div className="panel">
+        <div className="section-header">
+          <div className="panel-title" style={{ marginBottom: 0 }}>🆘 SOS Alerts</div>
         </div>
-      )}
-    </div>
+        {sosAlerts.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>No SOS alerts.</p>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>Person</th><th>Role</th><th>Bus</th><th>When</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {sosAlerts.map((a) => (
+                  <tr key={a.id}>
+                    <td><strong>{a.userName}</strong></td>
+                    <td style={{ textTransform: 'capitalize' }}>{a.role}</td>
+                    <td>{a.busId ?? '—'}</td>
+                    <td>{a.createdAt ? a.createdAt.toDate().toLocaleString() : 'just now'}</td>
+                    <td>
+                      {a.resolved
+                        ? <Badge variant="success">resolved</Badge>
+                        : <Badge variant="danger">open</Badge>}
+                    </td>
+                    <td>
+                      {!a.resolved && (
+                        <Button variant="secondary" size="sm" onClick={() => handleResolveSos(a)}>
+                          Mark resolved
+                        </Button>
+                      )}
+                      {a.location && (
+                        <a
+                          href={`https://www.openstreetmap.org/?mlat=${a.location.lat}&mlon=${a.location.lng}#map=17/${a.location.lat}/${a.location.lng}`}
+                          target="_blank" rel="noreferrer"
+                          style={{ marginLeft: '.5rem', fontSize: '.82rem' }}
+                        >
+                          View location
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="panel">
+        <div className="section-header">
+          <div className="panel-title" style={{ marginBottom: 0 }}>Driver Reports</div>
+        </div>
+        {reports.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>No incident or damage reports yet.</p>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>Type</th><th>Bus</th><th>Driver</th><th>Details</th><th>When</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {reports.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      {r.type === 'incident' ? '🚧' : '🔧'} {r.category}
+                    </td>
+                    <td><strong>{r.busNumber}</strong></td>
+                    <td>{r.driverName}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{r.description || '—'}</td>
+                    <td>{r.createdAt ? r.createdAt.toDate().toLocaleString() : 'just now'}</td>
+                    <td>
+                      {r.status === 'open'
+                        ? <Badge variant="warning">open</Badge>
+                        : <Badge variant="success">resolved</Badge>}
+                    </td>
+                    <td>
+                      {r.status === 'open' && (
+                        <Button variant="secondary" size="sm" onClick={() => handleResolveReport(r)}>
+                          Mark resolved
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   );
 
   const renderAttendance = () => {
@@ -896,6 +1173,7 @@ export const AdminDashboardPage: React.FC = () => {
           <span className="admin-topbar-user" title={profile?.email}>
             {profile ? `${profile.name} · admin` : 'Admin'}
           </span>
+          <NotificationBell />
           <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Logout</button>
         </div>
         <div className="admin-content">
@@ -1145,6 +1423,159 @@ export const AdminDashboardPage: React.FC = () => {
                   Cancel
                 </Button>
                 <Button type="submit" isLoading={maintenanceSaving}>Create account</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Parent modal ── */}
+      {showParentModal && (
+        <div className="modal-backdrop" onClick={() => !parentSaving && setShowParentModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Add a parent</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              This creates a login for the Parent Panel. Link them to their child afterwards.
+            </p>
+            <form onSubmit={handleCreateParent}>
+              <div className="form-group">
+                <label className="form-label">Full name</label>
+                <input
+                  className="form-control"
+                  placeholder="Parent's name"
+                  value={parentForm.name}
+                  onChange={(e) => setParentForm({ ...parentForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Phone</label>
+                <input
+                  className="form-control"
+                  placeholder="Mobile number"
+                  value={parentForm.phone}
+                  onChange={(e) => setParentForm({ ...parentForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email (their login)</label>
+                <input
+                  type="email"
+                  className="form-control"
+                  placeholder="parent1@example.com"
+                  value={parentForm.email}
+                  onChange={(e) => setParentForm({ ...parentForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password (min 6 characters)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Set a password for them"
+                  value={parentForm.password}
+                  onChange={(e) => setParentForm({ ...parentForm, password: e.target.value })}
+                  minLength={6}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setShowParentModal(false)} disabled={parentSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={parentSaving}>Create parent</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Link parent to student modal ── */}
+      {linkingParent && (
+        <div className="modal-backdrop" onClick={() => !linkSaving && setLinkingParent(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Link {linkingParent.name} to a student</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              The parent will see this student's live bus and ETA.
+            </p>
+            <form onSubmit={handleSaveLink}>
+              <Select
+                label="Student"
+                value={linkStudentUid}
+                onChange={(e) => setLinkStudentUid(e.target.value)}
+                options={[
+                  { value: '', label: '— No link —' },
+                  ...students.map((s) => ({ value: s.uid, label: `${s.name} (${s.email})` })),
+                ]}
+              />
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end', marginTop: '.5rem' }}>
+                <Button type="button" variant="secondary" onClick={() => setLinkingParent(null)} disabled={linkSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={linkSaving}>Save link</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Principal modal ── */}
+      {showPrincipalModal && (
+        <div className="modal-backdrop" onClick={() => !principalSaving && setShowPrincipalModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="panel-title">Add a principal / management account</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.88rem', marginBottom: '1rem' }}>
+              This creates a login for the read-only fleet + budget dashboard.
+            </p>
+            <form onSubmit={handleCreatePrincipal}>
+              <div className="form-group">
+                <label className="form-label">Full name</label>
+                <input
+                  className="form-control"
+                  placeholder="Principal's name"
+                  value={principalForm.name}
+                  onChange={(e) => setPrincipalForm({ ...principalForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Phone</label>
+                <input
+                  className="form-control"
+                  placeholder="Mobile number"
+                  value={principalForm.phone}
+                  onChange={(e) => setPrincipalForm({ ...principalForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email (their login)</label>
+                <input
+                  type="email"
+                  className="form-control"
+                  placeholder="principal@act.edu.in"
+                  value={principalForm.email}
+                  onChange={(e) => setPrincipalForm({ ...principalForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password (min 6 characters)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Set a password for them"
+                  value={principalForm.password}
+                  onChange={(e) => setPrincipalForm({ ...principalForm, password: e.target.value })}
+                  minLength={6}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '.75rem', justifyContent: 'flex-end' }}>
+                <Button type="button" variant="secondary" onClick={() => setShowPrincipalModal(false)} disabled={principalSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={principalSaving}>Create principal</Button>
               </div>
             </form>
           </div>

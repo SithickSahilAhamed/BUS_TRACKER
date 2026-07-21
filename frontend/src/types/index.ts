@@ -5,8 +5,9 @@ import type { Timestamp } from 'firebase/firestore';
 // ============================================================================
 
 // 'professor' is this college's own addition (staff also ride buses).
-// 'maintenance' got its own sign-up + dashboard in Phase 4. 'parent' |
-// 'principal' still just round out the spec's 6 roles for later phases.
+// 'maintenance', 'parent', and 'principal' all have real sign-up (admin-
+// created, like 'driver') + dashboards as of Phase 6 — the schema is now
+// fully realized for all 6 spec roles.
 export type UserRole = 'student' | 'professor' | 'driver' | 'admin' | 'parent' | 'maintenance' | 'principal';
 
 export interface UserProfile {
@@ -18,6 +19,7 @@ export interface UserProfile {
   active: boolean;
   assignedBusId?: string | null; // student/professor's permanent bus, set by admin
   assignedStopName?: string | null; // must match a name in that bus's `stops[]`
+  linkedStudentUid?: string | null; // parent role only — the child they track, set by admin
   createdAt?: Timestamp;
 }
 
@@ -203,6 +205,42 @@ export interface TripRecord {
   startedAt: Timestamp;
   endedAt: Timestamp;
   durationMinutes: number;
+}
+
+// ============================================================================
+// EMERGENCY SOS (PROJECT_SPEC.md sections 2 + 3 — student/driver "presses SOS")
+// ============================================================================
+
+export interface SosAlert {
+  id: string; // doc ID
+  userId: string;
+  userName: string;
+  role: 'student' | 'professor' | 'driver';
+  busId: string | null;
+  location: LatLng | null;
+  createdAt: Timestamp;
+  resolved: boolean;
+  resolvedAt?: Timestamp | null;
+}
+
+// ============================================================================
+// NOTIFICATIONS (PROJECT_SPEC.md section 7 — in-app, not push; see CLAUDE.md)
+// ============================================================================
+
+export type NotificationType =
+  | 'sos' | 'incident' | 'damage' | 'repair_closed'
+  | 'missed_bus_request' | 'missed_bus_decision' | 'bus_assignment';
+
+export interface AppNotification {
+  id: string; // doc ID
+  // Exactly one of these is set: a specific person, or everyone with that role.
+  recipientUid: string | null;
+  recipientRole: UserRole | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: Timestamp;
 }
 
 // ============================================================================

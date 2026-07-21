@@ -8,6 +8,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { subscribeToAllFuelRecords, subscribeToTrips } from '../../services/firestore';
+import { ExportButtons } from '../common/ExportButtons';
 import type { Bus, FuelRecord, TripRecord, UserProfile } from '../../types';
 
 interface Props {
@@ -87,11 +88,27 @@ export const AnalyticsTab: React.FC<Props> = ({ buses, students }) => {
       .sort((a, b) => b.tripCount - a.tripCount);
   }, [trips]);
 
+  const fuelRows: (string | number)[][] = fuelByBus
+    .filter((f) => f.recordCount > 0)
+    .map(({ bus, totalLitres, totalCost, avgMileage }) => [
+      bus.busId, totalLitres.toFixed(1), totalCost.toFixed(0), avgMileage != null ? avgMileage.toFixed(1) : '—',
+    ]);
+  const routeRows: (string | number)[][] = routeAnalysis.map(({ bus, riders, utilization }) => [
+    bus.busId, bus.routeName || bus.busName, riders, utilization != null ? `${utilization}%` : '—',
+  ]);
+  const stopRows: (string | number)[][] = topStops.map(({ name, count }) => [name, count]);
+  const driverRows: (string | number)[][] = driverAnalysis.map(({ driverName, tripCount, avgDurationMinutes }) => [
+    driverName, tripCount, avgDurationMinutes,
+  ]);
+
   return (
     <>
       <div className="two-col">
         <div className="panel">
-          <div className="panel-title">Fuel Analysis</div>
+          <div className="section-header">
+            <div className="panel-title" style={{ marginBottom: 0 }}>Fuel Analysis</div>
+            <ExportButtons title="Fuel Analysis" columns={['Bus', 'Litres', 'Cost', 'Avg Mileage']} rows={fuelRows} />
+          </div>
           {fuelByBus.every((f) => f.recordCount === 0) ? (
             <p style={{ color: 'var(--text-muted)' }}>No fuel records yet — add some from the Fleet Maintenance tab.</p>
           ) : (
@@ -116,7 +133,10 @@ export const AnalyticsTab: React.FC<Props> = ({ buses, students }) => {
         </div>
 
         <div className="panel">
-          <div className="panel-title">Route Analysis</div>
+          <div className="section-header">
+            <div className="panel-title" style={{ marginBottom: 0 }}>Route Analysis</div>
+            <ExportButtons title="Route Analysis" columns={['Bus', 'Route', 'Riders', 'Utilization']} rows={routeRows} />
+          </div>
           {routeAnalysis.length === 0 ? (
             <p style={{ color: 'var(--text-muted)' }}>No buses yet.</p>
           ) : (
@@ -142,7 +162,10 @@ export const AnalyticsTab: React.FC<Props> = ({ buses, students }) => {
 
       <div className="two-col">
         <div className="panel">
-          <div className="panel-title">Student Analysis — Most-Used Stops</div>
+          <div className="section-header">
+            <div className="panel-title" style={{ marginBottom: 0 }}>Student Analysis — Most-Used Stops</div>
+            <ExportButtons title="Student Analysis" columns={['Stop', 'Students']} rows={stopRows} />
+          </div>
           {topStops.length === 0 ? (
             <p style={{ color: 'var(--text-muted)' }}>No students assigned to a stop yet.</p>
           ) : (
@@ -158,7 +181,10 @@ export const AnalyticsTab: React.FC<Props> = ({ buses, students }) => {
         </div>
 
         <div className="panel">
-          <div className="panel-title">Driver Analysis</div>
+          <div className="section-header">
+            <div className="panel-title" style={{ marginBottom: 0 }}>Driver Analysis</div>
+            <ExportButtons title="Driver Analysis" columns={['Driver', 'Trips', 'Avg Duration (min)']} rows={driverRows} />
+          </div>
           {driverAnalysis.length === 0 ? (
             <p style={{ color: 'var(--text-muted)' }}>No completed trips yet — logged automatically at End Trip.</p>
           ) : (

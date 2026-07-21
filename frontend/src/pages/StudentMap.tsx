@@ -8,6 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { Navbar, LoadingSpinner, Button } from '../components/common';
 import { BusMap, isFresh } from '../components/BusMap';
 import { ChatAssistant } from '../components/ChatAssistant';
+import { SosButton } from '../components/SosButton';
+import { NotificationBell } from '../components/NotificationBell';
 import { useBuses } from '../hooks/useBuses';
 import { useAuth } from '../context/AuthContext';
 import { estimateEta } from '../utils/eta';
@@ -124,6 +126,7 @@ const StudentMapPage: React.FC = () => {
               <span className={`status-dot ${liveCount ? 'live' : 'offline'}`} />
               {liveCount} live now
             </span>
+            <NotificationBell />
             {profile && (
               <span className="chip" title={profile.email}>
                 {profile.name.split(' ')[0]} · {profile.role}
@@ -274,8 +277,11 @@ const StudentMapPage: React.FC = () => {
         )}
       </div>
 
-      {(profile?.role === 'student' || profile?.role === 'professor') && (
-        <ChatAssistant title="Travel Assistant" examplePrompt="When will my bus arrive?" buildContext={buildChatContext} />
+      {(profile?.role === 'student' || profile?.role === 'professor') && profile && (
+        <>
+          <ChatAssistant title="Travel Assistant" examplePrompt="When will my bus arrive?" buildContext={buildChatContext} />
+          <SosButton userId={profile.uid} userName={profile.name} role={profile.role as 'student' | 'professor'} busId={myBus?.busId ?? null} />
+        </>
       )}
 
       {/* ── Missed bus modal ── */}

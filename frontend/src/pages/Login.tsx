@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import type { UserRole } from '../types';
 
-export type LoginVariant = 'general' | 'driver' | 'admin' | 'maintenance';
+export type LoginVariant = 'general' | 'driver' | 'admin' | 'maintenance' | 'parent' | 'principal';
 
 const homeForRole = (role: UserRole): string => {
   if (role === 'admin') return '/admin';
   if (role === 'driver') return '/driver';
   if (role === 'maintenance') return '/maintenance';
+  if (role === 'parent') return '/parent';
+  if (role === 'principal') return '/principal';
   return '/map';
 };
 
@@ -46,6 +48,22 @@ const VARIANTS: Record<
     subtitle: 'Use the login your admin gave you',
     accent: '#c2571f',
     expect: 'maintenance',
+    showSignup: false,
+  },
+  parent: {
+    icon: '👪',
+    title: 'Parent Sign In',
+    subtitle: 'Use the login your admin gave you',
+    accent: '#7c5cbf',
+    expect: 'parent',
+    showSignup: false,
+  },
+  principal: {
+    icon: '🎓',
+    title: 'Principal / Management Sign In',
+    subtitle: 'Use the login your admin gave you',
+    accent: '#2d6b6b',
+    expect: 'principal',
     showSignup: false,
   },
 };

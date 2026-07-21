@@ -21,9 +21,10 @@
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 initializeApp();
@@ -53,6 +54,10 @@ const ROLE_PERSONAS: Record<string, string> = {
     `buses needing service or with expiring documents, open incident/damage reports, ` +
     `driver status, fuel costs, overcrowded buses. If asked to "generate a report," ` +
     `summarize the data given in text — you cannot produce a PDF or file. ${GUARDRAIL}`,
+  principal: `You are the AI assistant inside ACT To Go, helping college leadership at ` +
+    `Agni College of Technology with a high-level view of the transport operation: ` +
+    `fleet utilization, fuel and maintenance spend, student ridership, and driver ` +
+    `performance. Answer in a brief executive-summary tone, not operational detail. ${GUARDRAIL}`,
 };
 
 export const chatAssistant = onCall({ secrets: [GEMINI_API_KEY], cors: true }, async (request) => {
@@ -93,4 +98,113 @@ export const chatAssistant = onCall({ secrets: [GEMINI_API_KEY], cors: true }, a
     console.error('Gemini call failed:', e);
     throw new HttpsError('internal', 'The assistant is unavailable right now — try again shortly.');
   }
+});
+
+// ============================================================================
+// NOTIFICATIONS (PROJECT_SPEC.md section 7)
+//
+// In-app only, not push — see CLAUDE.md for that call. These triggers are
+// the only thing that ever writes to `notifications`; the client can only
+// read its own and mark them read (firestore.rules has no client create
+// rule for the collection at all).
+// ============================================================================
+
+function notify(doc: Record<string, unknown>) {
+  return db.collection('notifications').add({ read: false, createdAt: FieldValue.serverTimestamp(), ...doc });
+}
+
+export const onSosAlertCreated = onDocumentCreated('sosAlerts/{alertId}', async (event) => {
+  const alert = event.data?.data();
+  if (!alert) return;
+  await notify({
+    recipientUid: null,
+    recipientRole: 'admin',
+    type: 'sos',
+    title: '🆘 SOS Alert',
+    body: `${alert.userName} (${alert.role}) pressed SOS${alert.busId ? ` on ${alert.busId}` : ''}.`,
+  });
+});
+
+export const onReportCreated = onDocumentCreated('reports/{reportId}', async (event) => {
+  const report = event.data?.data();
+  if (!report) return;
+
+  if (report.type === 'incident') {
+    await notify({
+      recipientUid: null,
+      recipientRole: 'admin',
+      type: 'incident',
+      title: `🚧 Incident: ${report.category}`,
+      body: `${report.driverName} reported ${report.category} on ${report.busNumber}.`,
+    });
+  } else if (report.type === 'damage') {
+    const body = `${report.driverName} reported ${report.category} damage on ${report.busNumber}.`;
+    await Promise.all([
+      notify({ recipientUid: null, recipientRole: 'admin', type: 'damage', title: `🔧 Damage: ${report.category}`, body }),
+      notify({ recipientUid: null, recipientRole: 'maintenance', type: 'damage', title: `🔧 Repair needed: ${report.category}`, body }),
+    ]);
+  }
+});
+
+export const onReportUpdated = onDocumentUpdated('reports/{reportId}', async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if (before.status === 'open' && after.status === 'resolved' && after.type === 'damage' && after.driverId) {
+    await notify({
+      recipientUid: after.driverId,
+      recipientRole: null,
+      type: 'repair_closed',
+      title: '✅ Repair completed',
+      body: `Your ${after.category} report on ${after.busNumber} was fixed.` +
+        (after.repairNotes ? ` Notes: ${after.repairNotes}` : ''),
+    });
+  }
+});
+
+export const onMissedBusRequestCreated = onDocumentCreated('missedBusRequests/{requestId}', async (event) => {
+  const req = event.data?.data();
+  if (!req) return;
+  await notify({
+    recipientUid: null,
+    recipientRole: 'admin',
+    type: 'missed_bus_request',
+    title: '🚌 Missed bus request',
+    body: `${req.studentName} missed ${req.originalBusId} and requested ${req.requestedBusNumber}.`,
+  });
+});
+
+export const onMissedBusRequestUpdated = onDocumentUpdated('missedBusRequests/{requestId}', async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if (before.status === 'pending' && after.status !== 'pending') {
+    await notify({
+      recipientUid: after.studentId,
+      recipientRole: null,
+      type: 'missed_bus_decision',
+      title: after.status === 'approved' ? '✅ Alternative bus approved' : '❌ Request denied',
+      body: after.status === 'approved'
+        ? `You're approved to take ${after.requestedBusNumber} instead of ${after.originalBusId}.`
+        : `Your request to take ${after.requestedBusNumber} instead of ${after.originalBusId} was denied.`,
+    });
+  }
+});
+
+export const onUserAssignmentChanged = onDocumentUpdated('users/{uid}', async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if (!['student', 'professor'].includes(after.role as string)) return;
+  if (before.assignedBusId === after.assignedBusId) return;
+
+  await notify({
+    recipientUid: event.params.uid,
+    recipientRole: null,
+    type: 'bus_assignment',
+    title: after.assignedBusId ? '🚌 Bus assignment updated' : '🚌 Bus assignment removed',
+    body: after.assignedBusId
+      ? `You've been assigned to ${after.assignedBusId}` + (after.assignedStopName ? ` — stop: ${after.assignedStopName}.` : '.')
+      : 'Your bus assignment was cleared — contact the transport office.',
+  });
 });

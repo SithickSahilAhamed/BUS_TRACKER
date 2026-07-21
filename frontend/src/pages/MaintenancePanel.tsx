@@ -10,6 +10,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
 import { Navbar, Alert, Button, Select, Input } from '../components/common';
+import { NotificationBell } from '../components/NotificationBell';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
 import {
@@ -137,6 +138,7 @@ const MaintenancePanelPage: React.FC = () => {
             <span className="chip">
               {openRequests.length} open repair{openRequests.length === 1 ? '' : 's'}
             </span>
+            <NotificationBell />
             <button className="btn btn-secondary btn-sm" onClick={() => navigate('/map')}>
               View map
             </button>

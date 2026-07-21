@@ -12,6 +12,8 @@ import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { Navbar, Alert, Button, Select } from '../components/common';
 import { ChatAssistant } from '../components/ChatAssistant';
+import { SosButton } from '../components/SosButton';
+import { NotificationBell } from '../components/NotificationBell';
 import { useAuth } from '../context/AuthContext';
 import { useBuses } from '../hooks/useBuses';
 import {
@@ -231,6 +233,7 @@ export const DriverPanelPage: React.FC = () => {
               <span className={`status-dot ${isTracking ? 'live' : 'offline'}`} />
               {isTracking ? 'Broadcasting' : 'Idle'}
             </span>
+            <NotificationBell />
             <button className="btn btn-secondary btn-sm" onClick={() => navigate('/map')}>
               View map
             </button>
@@ -481,6 +484,7 @@ export const DriverPanelPage: React.FC = () => {
       </div>
 
       <ChatAssistant title="Driver Assistant" examplePrompt="Which stop has the most students waiting?" buildContext={buildChatContext} />
+      {profile && <SosButton userId={profile.uid} userName={profile.name} role="driver" busId={myBus?.busId ?? null} />}
 
       {/* ── Report modal ── */}
       {reportType && (
