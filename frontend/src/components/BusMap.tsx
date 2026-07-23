@@ -103,11 +103,13 @@ export const BusMap: React.FC<BusMapProps> = ({
           pathOptions={{ color: '#003162', weight: 5, opacity: 0.75 }}
         />
       )}
-      {selectedBus?.stops?.map((stop, i) => (
-        <Marker key={`${stop.name}-${i}`} position={[stop.lat, stop.lng]} icon={stopIcon}>
-          <Popup>{stop.name}</Popup>
-        </Marker>
-      ))}
+      {selectedBus?.stops
+        ?.filter((stop) => stop.lat != null && stop.lng != null)
+        .map((stop, i) => (
+          <Marker key={`${stop.name}-${i}`} position={[stop.lat, stop.lng]} icon={stopIcon}>
+            <Popup>{stop.name}</Popup>
+          </Marker>
+        ))}
 
       {/* Live bus markers */}
       {buses
@@ -142,7 +144,7 @@ export const BusMap: React.FC<BusMapProps> = ({
 
       {/* Fallback circles at route origin for buses with no GPS fix yet */}
       {buses
-        .filter((b) => !b.lastLocation && b.stops?.length)
+        .filter((b) => !b.lastLocation && b.stops?.[0]?.lat != null && b.stops?.[0]?.lng != null)
         .map((bus) => (
           <CircleMarker
             key={bus.busId}
